@@ -87,18 +87,21 @@ WeKnora 是对照组，不是最终交付物。学习的是可迁移机制，而
 
 ## 6. 稳定技术方向
 
-当前建议基线：
+已接受基线见 `docs/adr/0001-主服务采用-spring-boot-与-spring-ai.md`：
 
-- Web：Vue 3 + TypeScript；
-- 主服务：Go；
-- 解析服务：Python；
-- 数据库：PostgreSQL + pgvector；
-- 任务队列：Redis + Asynq；
+- Web：Vue 3、TypeScript、Vite、Vue Router、Pinia、TDesign。页面只覆盖演示主路径，见 `docs/adr/0002-前端采用精简-vue-3-控制台.md`；
+- 主服务：Java 21、Spring Boot、Spring MVC、虚拟线程；
+- 模型与工具基础设施：Spring AI 的 `ChatModel`、`EmbeddingModel`、`ChatClient`、`ToolCallback`、`PgVectorStore` 基线和 Micrometer Observation；
+- 持久化：PostgreSQL + pgvector、Spring Data JDBC 或 `JdbcTemplate`、Flyway；
+- 任务：PostgreSQL 任务表是事实来源；Redis 负责唤醒、取消标记和限流；
+- 解析：首期在 Java 进程内处理 Markdown 和普通 PDF；复杂解析再按接口接入 Python；
+- 安全：Spring Security；策略由确定性代码在检索和工具执行前生效；
 - 部署：Docker Compose；
-- 可观测：OpenTelemetry，按需要接入 Langfuse；
-- 架构：主服务采用模块化单体，解析服务保持独立。
+- 可观测：Micrometer Observation + OpenTelemetry，按需要接入 Langfuse；
+- 测试：JUnit 5 + Testcontainers；
+- 架构：包级模块化单体。Spring AI 提供模型和工具基础设施；Agent Runtime、Production RAG、权限、任务状态、引用和评测由本项目实现。
 
-尚未形成 ADR 的选择都可以通过设计和实验调整，不视为不可改变的承诺。
+尚未形成 ADR 的选择都可以通过设计和实验调整，不视为不可改变的承诺。脚手架已锁定 Maven、Java 21、包名 `dev.pbrag`、Spring Boot 4.1.2 和 Spring AI 2.0.1。PostgreSQL 与 Redis 的连接地址写在 `backend/src/main/resources/application.yml`，由外部服务器提供。
 
 ## 7. 项目质量原则
 
@@ -112,9 +115,11 @@ WeKnora 是对照组，不是最终交付物。学习的是可迁移机制，而
 
 ## 8. 核心文档索引
 
+- `docs/adr/0001-主服务采用-spring-boot-与-spring-ai.md`：已接受的主服务技术栈；
+- `docs/adr/0002-前端采用精简-vue-3-控制台.md`：已接受的前端范围；
 - `docs/ROADMAP_6_WEEKS.md`：当前正式执行计划；
 - `docs/HANDOFF.md`：当前进度、验证、风险与下一步；
-- `docs/PB-RAG企业级Agent工程实战方案.md`：完整的十二周原始方案和详细知识地图；
+- `docs/PB-RAG企业级Agent工程实战方案.md`：完整知识地图；第 4.1 节是系统架构图，第 4.2 节是前端架构图，第 4.3 节是代码架构图；
 - `docs/WEKNORA_项目拆解与Agent产品路线图.md`：WeKnora 产品、用户和架构拆解；
 - `prompts/README.md`：运行时 Prompt 规范。
 

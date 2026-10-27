@@ -409,50 +409,51 @@ WeKnora 区分 `quick-answer` 和 `smart-reasoning`：前者走固定 RAG，后�
 
 ### 6.1 推荐的第一阶段架构
 
-如果团队以快速验证为目标，可以保留 WeKnora 的思想，但先缩小技术面：
+已接受的技术栈见 `docs/adr/0001-主服务采用-spring-boot-与-spring-ai.md`。保留 WeKnora 的机制，缩小技术面：
 
 | 模块 | 第一阶段建议 | 原因 |
 |---|---|---|
-| 前端 | Vue 3 或团队熟悉的框架 | 对话、引用、任务进度最重要 |
-| API 服务 | Go 或团队主语言 | 保持单体模块化，暂不拆微服务 |
-| 文档解析 | 独立 Python 服务 | 解析生态丰富，便于隔离重依赖 |
-| 数据库 | PostgreSQL + pgvector | 减少组件，事务一致性好 |
-| 队列 | Redis 队列 | 解析与富化必须异步 |
+| 前端 | Vue 3、TypeScript、Vite、Pinia、TDesign | 只保留知识库、对话、运行和评测页面，见 ADR 0002 |
+| API 服务 | Java 21、Spring Boot、Spring MVC、虚拟线程 | 包级模块化单体，暂不拆微服务 |
+| 模型与工具基础设施 | Spring AI | 复用模型、Embedding、工具 Schema 和观测 |
+| 文档解析 | Java 处理 Markdown 和普通 PDF；复杂文档再接 Python | 先打通主链路，再隔离重依赖 |
+| 数据库 | PostgreSQL + pgvector、JDBC、Flyway | 减少组件，事务一致性好 |
+| 任务 | PostgreSQL 任务表；Redis 负责唤醒、取消标记和限流 | 解析与索引必须异步，且崩溃后可恢复 |
 | 模型 | 一个主 LLM、一个 embedding、一个 reranker | 先建立稳定基线 |
-| Agent | ReAct + 工具白名单 + 最大轮数 | 可控优先 |
-| 可观测 | OpenTelemetry/Langfuse 或等价方案 | 从第一天记录质量与成本 |
+| Agent | 自研 ReAct Runtime + 工具白名单 + 最大轮数 | 可控优先；框架默认 Tool Loop 只作对照 |
+| 可观测 | Micrometer Observation、OpenTelemetry，按需接入 Langfuse | 从第一天记录质量与成本 |
 
 ### 6.2 建议先定义的领域接口
 
-```go
-type Parser interface {
-    Parse(ctx context.Context, input DocumentInput) (ParsedDocument, error)
+```java
+public interface Parser {
+    ParsedDocument parse(DocumentInput input);
 }
 
-type Chunker interface {
-    Split(ctx context.Context, doc ParsedDocument, cfg ChunkConfig) ([]Chunk, error)
+public interface Chunker {
+    List<Chunk> split(ParsedDocument document, ChunkConfig config);
 }
 
-type Embedder interface {
-    Embed(ctx context.Context, texts []string) ([][]float32, error)
+public interface Embedder {
+    List<float[]> embed(List<String> texts);
 }
 
-type Retriever interface {
-    Search(ctx context.Context, query SearchQuery) ([]Candidate, error)
+public interface Retriever {
+    List<Candidate> search(SearchQuery query);
 }
 
-type Reranker interface {
-    Rerank(ctx context.Context, query string, docs []Candidate) ([]Candidate, error)
+public interface Reranker {
+    List<Candidate> rerank(String query, List<Candidate> documents);
 }
 
-type Tool interface {
-    Name() string
-    Schema() JSONSchema
-    Execute(ctx context.Context, args json.RawMessage) (ToolResult, error)
+public interface Tool {
+    String name();
+    JsonSchema schema();
+    ToolResult execute(JsonNode arguments);
 }
 ```
 
-接口的价值不是“抽象得漂亮”，而是能替换实现、做离线评测、注入故障和写契约测试。
+接口的价值是能替换实现、做离线评测、注入故障和写契约测试。调用时同时携带 Workspace 作用域、调用者身份和取消信号。这些上下文由应用代码维护，不从模型输出中恢复。
 
 ### 6.3 最小数据模型
 

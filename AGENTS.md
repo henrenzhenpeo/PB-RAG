@@ -46,8 +46,14 @@ add more integrations.
 
 ## Engineering rules
 
-- Prefer a modular monolith for the Go application; keep document parsing as a
-  separate Python service only when its dependencies justify the boundary.
+- Prefer a package-level modular monolith for the Spring Boot application.
+  Parse Markdown and simple PDF in the Java process first; add a separate
+  Python parser only when layout, OCR, tables, or complex Office documents
+  require it.
+- Treat Spring AI as model and tool infrastructure. Implement the Agent
+  Runtime, production retrieval, authorization, job state, citations, and
+  evaluation in this repository. The accepted stack is
+  `docs/adr/0001-主服务采用-spring-boot-与-spring-ai.md`.
 - Preserve workspace scope through HTTP, service, repository, retrieval, tool,
   trace, and audit layers.
 - Apply authorization before retrieval. Never retrieve unauthorized content and

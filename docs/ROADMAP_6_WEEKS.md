@@ -2,6 +2,7 @@
 
 > 状态：当前正式计划
 > 原十二周方案保留为知识地图，本文件覆盖其中的时间安排。
+> 技术栈：`docs/adr/0001-主服务采用-spring-boot-与-spring-ai.md`
 > 建议投入：每周 20～30 小时。
 
 ## 执行策略
@@ -33,13 +34,13 @@
 
 ### 工作内容
 
-- Go API、PostgreSQL、pgvector、Redis 和 Docker Compose；
-- 迁移、配置、结构化日志、请求 ID 和基础 Trace；
+- Spring Boot、Spring MVC、Java 21 虚拟线程、PostgreSQL、pgvector、Redis 和 Docker Compose；
+- Flyway、Spring Data JDBC、配置、结构化日志、请求 ID 和 Micrometer/OpenTelemetry Trace；
 - 文档、版本、Chunk、Job、Session、Message 和 Citation 模型；
 - 文件上传和对象存储接口；
-- 最小 Worker 和入库状态；
-- 基础向量检索与流式生成；
-- 最小前端或调试界面。
+- PostgreSQL 任务表、入库阶段和失败原因；Redis 负责唤醒、取消标记和限流；
+- Spring AI `EmbeddingModel` 与 `PgVectorStore` 基线、基础向量检索和流式生成；
+- Vue 3 知识库详情页和对话页：上传、任务阶段、流式回答和引用。
 
 ### 验收
 
@@ -74,11 +75,12 @@
 ### 工作内容
 
 - Agent Run/Step 状态机；
-- ReAct 核心循环；
+- 基于 `ChatModel` 与显式 Tool Registry 的 ReAct 核心循环；
 - Tool Registry 与 JSON Schema 校验；
 - `search_knowledge`、`read_document`、`list_documents`、`calculator` 和一个领域工具；
 - 最大迭代、重复调用检测、Deadline、单步超时、取消和有限重试；
-- SSE 执行事件、轨迹持久化和回放。
+- SSE 执行事件、轨迹持久化和回放；
+- 运行页展示 Run/Step、工具参数和取消。
 
 ### 验收
 
@@ -119,6 +121,8 @@
 - 建立 30～50 个 Agent 多步骤任务；
 - 统计工具选择、参数正确率、任务成功率、成本和延迟；
 - 完成分块、Hybrid、Rerank、工具描述或上下文预算实验；
+- 用同一数据集比较自研 RAG、Agent Runtime 与 Spring AI 默认 Advisor 和 Tool Loop；
+- 评测页并列展示两次运行；
 - 完成优先级最高的故障注入。
 
 ### 必做故障

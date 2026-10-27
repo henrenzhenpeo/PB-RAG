@@ -1,10 +1,10 @@
 # PB-RAG 企业级 Agent 工程实战方案
 
-> 方案版本：v0.1
-> 日期：2026-10-24
+> 方案版本：v0.2
+> 日期：2026-10-24，技术栈修订：2026-10-27
 > 适用对象：已有全栈开发经验、深度使用过 WeKnora，但缺少企业级 Agent 开发经历的开发者
 > 项目目标：以 WeKnora 为参考实现，独立完成一套精简、完整、可评测、可治理的企业知识 Agent 核心系统。
-> 执行说明：本文保留完整知识地图；实际时间安排以 `docs/ROADMAP_6_WEEKS.md` 为准。
+> 执行说明：本文保留完整知识地图；实际时间安排以 `docs/ROADMAP_6_WEEKS.md` 为准。主服务技术栈以 `docs/adr/0001-主服务采用-spring-boot-与-spring-ai.md` 为准。
 
 ---
 
@@ -132,94 +132,161 @@ flowchart LR
 
 ## 4. 总体架构
 
-### 4.1 推荐架构
+### 4.1 系统架构图
+
+目标结构以 ADR 0001 为准。`backend` 中对应包已经建立，请求链路尚未接通。PostgreSQL 和 Redis 是外部服务器，地址写在 `backend/src/main/resources/application.yml`。
 
 ```mermaid
 flowchart TB
-    subgraph Client[客户端]
-      Web[Web UI]
-      CLI[CLI / API Client]
-    end
+  Vue["Vue 3"] --> API["Spring MVC / SSE"]
 
-    subgraph API[应用服务]
-      Gateway[HTTP API / SSE]
-      IAM[Workspace / RBAC / API Key]
-      KB[Knowledge Service]
-      Chat[Chat Service]
-      AgentService[Agent Service]
-      Eval[Evaluation Service]
-    end
+  subgraph App["Spring Boot 主服务 · dev.pbrag"]
+    API --> identity["identity · Spring Security"]
+    API --> knowledge["knowledge"]
+    API --> chat["chat"]
+    API --> agent["agent · 自研 Runtime"]
+    API --> evaluation["evaluation"]
 
-    subgraph Runtime[核心运行时]
-      Ingestion[Ingestion Pipeline]
-      RAG[RAG Pipeline]
-      Agent[Agent Runtime]
-      Tools[Tool Registry]
-      Approval[Approval Gate]
-      Context[Context Manager]
-    end
+    knowledge --> ingestion["ingestion · 任务状态机"]
+    chat --> retrieval["retrieval · 混合检索与引用"]
+    agent --> tool["tool · 白名单 · 审批 · 审计"]
+    agent --> retrieval
+    tool --> retrieval
 
-    subgraph Worker[异步执行]
-      Queue[Job Queue]
-      Parser[Document Parser]
-      Indexer[Chunk / Embed / Index]
-    end
+    ingestion --> AI["Spring AI"]
+    retrieval --> AI
+    chat --> AI
+    agent --> AI
 
-    subgraph Infra[基础设施]
-      PG[(PostgreSQL + pgvector)]
-      Redis[(Redis)]
-      Object[(Object Storage)]
-      LLM[LLM / Embedding / Rerank]
-      Trace[OpenTelemetry / Langfuse]
-    end
+    ingestion --> platform["platform · JDBC · Flyway"]
+    retrieval --> platform
+    chat --> platform
+    agent --> platform
+    tool --> platform
+  end
 
-    Client --> Gateway
-    Gateway --> IAM
-    Gateway --> KB
-    Gateway --> Chat
-    Gateway --> AgentService
-    KB --> Ingestion
-    Ingestion --> Queue
-    Queue --> Parser
-    Queue --> Indexer
-    Chat --> RAG
-    AgentService --> Agent
-    Agent --> Tools
-    Agent --> Approval
-    Agent --> Context
-    RAG --> PG
-    Tools --> RAG
-    API --> PG
-    API --> Redis
-    Worker --> Object
-    Runtime --> LLM
-    Runtime --> Trace
+  platform --> PG[("PostgreSQL + pgvector")]
+  AI --> PG
+  platform --> Redis[("Redis · 唤醒 · 取消 · 限流")]
+  AI --> Model["Chat / Embedding / Rerank API"]
+  ingestion -.-> Py["Python Parser · 复杂文档后期再接"]
 ```
 
-### 4.2 技术栈建议
+Spring AI 提供模型、Embedding、工具 Schema 和第一周向量读写。检索编排、Agent 循环、权限、任务状态、引用和评测位于上面的业务包中。
 
-这是一套建议基线，可根据个人熟悉程度调整，但不要频繁更换：
+### 4.2 前端架构
 
-| 层 | 建议技术 | 选择理由 |
+已由 ADR 0002 接受。前端是独立的 Vue 3 单页应用，只覆盖演示主路径。开发时 Vite 将 `/api` 代理到 Spring Boot。路由守卫只选择页面；Workspace 隔离、检索过滤和工具权限由后端执行。
+
+```mermaid
+flowchart TB
+  Login["/login"] --> Layout["平台布局"]
+
+  subgraph Spa["Vue 3 单页应用"]
+    Layout --> KB["知识库列表与详情"]
+    Layout --> Chat["对话页"]
+    Layout --> Run["Agent 运行页"]
+    Layout --> Eval["评测对比"]
+    Store["Pinia · 当前 Workspace 与进行中的流"]
+    Http["axios"]
+    Sse["fetch-event-source"]
+    KB --> Http
+    Eval --> Http
+    Chat --> Http
+    Chat --> Sse
+    Run --> Sse
+    Chat --> Store
+    Run --> Store
+  end
+
+  Http --> API["Spring Boot /api"]
+  Sse --> API
+```
+
+对话页左侧是消息，右侧是引用和检索阶段。运行页左侧是 Run/Step，右侧是工具参数、审批和取消。知识库详情展示上传后的阶段、失败原因和重试。
+
+第 1 周交付知识库详情和对话页。运行页在第 3 周加入，审批在第 4 周加入，评测对比在第 5 周加入。嵌入页、桌面端、多语言、组织、设置中心、工具箱、Wiki 和 Office 在线预览不进入第一期。
+
+### 4.3 代码架构
+
+代码按依赖方向分层。页面不直接访问数据库，控制器不直接调用模型和 SQL。当前仓库里后端只有 `dev.pbrag` 的包说明和启动类；下面的分层在出现真实类时再创建，不预先铺空目录。
+
+```mermaid
+flowchart TB
+  subgraph fe ["frontend/src"]
+    views["views"]
+    components["components"]
+    composables["composables"]
+    stores["stores"]
+    apiClient["api"]
+    views --> components
+    views --> composables
+    views --> stores
+    composables --> apiClient
+    stores --> apiClient
+  end
+
+  subgraph be ["backend/src/main/java/dev/pbrag"]
+    controllers["各业务包 api"]
+    services["各业务包 service"]
+    domain["各业务包 domain"]
+    persistence["各业务包 persistence"]
+    platform["platform"]
+    controllers --> services
+    services --> domain
+    services --> persistence
+    persistence --> platform
+    services --> platform
+  end
+
+  apiClient --> controllers
+  platform --> resources["resources/db/migration · application.yml"]
+  services --> prompts["prompts/"]
+```
+
+业务包是 `identity`、`knowledge`、`ingestion`、`retrieval`、`chat`、`agent`、`tool`、`evaluation` 和 `observability`。每个包内部使用同一套分层：
+
+| 分层 | 代码放什么 |
+|---|---|
+| `api` | Spring MVC 控制器和 SSE 端点，只做参数校验和响应转换 |
+| `service` | 用例：入库阶段推进、检索编排、Agent 循环、审批 |
+| `domain` | 状态、不变量和错误分类，不依赖 Spring Web |
+| `persistence` | Spring Data JDBC 与本包 SQL，查询带 Workspace 条件 |
+
+包之间只允许这些调用：`knowledge` 调用 `ingestion`，`chat` 调用 `retrieval`，`agent` 调用 `tool` 和 `retrieval`，`tool` 调用 `retrieval`。需要鉴权时调用 `identity`。`observability` 提供 Trace 标识，不承载业务决策。`platform` 集中放置 JDBC、Flyway 和 Spring AI 的 `ChatModel`、`EmbeddingModel`、`ToolCallback`、`PgVectorStore` 适配。业务包通过 `platform` 使用这些基础设施。
+
+`prompts/` 保存版本化的运行时提示词。`frontend` 只通过 `/api` 访问后端。
+
+### 4.4 技术栈
+
+已由 ADR 0001 接受。脚手架初始化时锁定 Spring Boot 与 Spring AI 的 GA 版本。
+
+| 层 | 技术 | 选择理由 |
 |---|---|---|
-| Web | Vue 3 + TypeScript | 与 WeKnora 前端接近，适合做对照学习 |
-| API | Go + Gin/Chi | 并发、SSE、任务和工具执行模型清晰 |
-| 解析服务 | Python + FastAPI/gRPC | 文档与 AI 处理生态成熟 |
+| Web | Vue 3、TypeScript、Vite、Vue Router、Pinia、TDesign | 沿用 WeKnora 的主路径技术骨架，页面只保留演示闭环 |
+| API | Java 21、Spring Boot、Spring MVC、虚拟线程 | 贴合 Java 企业开发经验；阻塞模型足够表达 SSE、超时和取消 |
+| 模型与工具基础设施 | Spring AI | 复用 `ChatModel`、`EmbeddingModel`、工具 Schema、向量基线和观测 |
+| 持久化 | Spring Data JDBC 或 `JdbcTemplate`、Flyway | 混合检索、版本和权限过滤需要明确 SQL |
+| 解析 | 首期 Java；复杂文档再接 Python | 六周内先统一主链路，解析重依赖再隔离 |
 | 数据库 | PostgreSQL + pgvector | 业务数据和向量数据统一，减少组件 |
 | 关键词检索 | PostgreSQL FTS 或 ParadeDB | 先完成混合检索，不急于引入 ES |
-| 队列 | Redis + Asynq | 对照 WeKnora，学习异步任务工程 |
+| 任务 | PostgreSQL 任务表；Redis 负责唤醒、取消标记和限流 | 恢复与业务事务一致，并保留异步执行 |
 | 对象存储 | 本地接口 + MinIO 实现 | 开发简单，同时保留替换能力 |
-| 可观测 | OpenTelemetry + Langfuse | 覆盖通用 Trace 和 LLM Trace |
+| 可观测 | Micrometer Observation、OpenTelemetry、按需 Langfuse | 覆盖应用 Trace、模型 Trace 和成本 |
+| 测试 | JUnit 5 + Testcontainers | 数据库、队列和隔离测试可重复 |
+| 安全 | Spring Security | 鉴权在检索和工具执行前生效 |
 | 部署 | Docker Compose | 能复现完整环境，后期再研究 Kubernetes |
 
-### 4.3 模块化单体优先
+Spring AI 不承担整个系统架构。Agent Runtime、Production RAG、Workspace 隔离、审批、审计、任务状态、引用和评测仍由 PB-RAG 实现。框架自带的 RAG Advisor 和 Tool Loop 只作为第 5 周的对照基线。
 
-除文档解析服务外，第一阶段采用模块化单体，不主动拆微服务。
+### 4.5 模块化单体优先
 
-建议模块：
+第一阶段采用包级模块化单体，不主动拆微服务。Markdown 和普通 PDF 的解析留在主进程；复杂版面、OCR、表格和 Office 文档再拆出 Python 解析服务。
+
+建议模块以 Java 包划分，包根在脚手架初始化时确定：
 
 ```text
-internal/
+<root>/
 ├── identity/        # 用户、Workspace、角色、API Key
 ├── knowledge/       # 知识库、文档、版本、Chunk
 ├── ingestion/       # 入库任务与阶段状态机
@@ -229,7 +296,7 @@ internal/
 ├── tool/            # Tool Registry、执行、审批、审计
 ├── evaluation/      # 数据集、运行、指标、对比
 ├── observability/   # Trace、Metric、日志
-└── platform/        # 数据库、Redis、模型和存储适配器
+└── platform/        # JDBC、Redis、Spring AI 和存储适配器
 ```
 
 选择模块化单体，是为了先理解领域边界和核心链路，而不是提前承担分布式事务与服务治理成本。
@@ -831,14 +898,15 @@ audit_logs
 
 ```text
 docs/adr/
-├── 0001-为什么采用模块化单体.md
-├── 0002-为什么首期使用PostgreSQL与pgvector.md
-├── 0003-文档版本与索引原子切换.md
-├── 0004-Agent执行状态持久化.md
-├── 0005-工具权限与人工审批.md
-├── 0006-引用协议与来源版本.md
-├── 0007-上下文预算与压缩.md
-└── 0008-评测可复现性.md
+├── 0001-主服务采用-spring-boot-与-spring-ai.md   # 已接受
+├── 0002-前端采用精简-vue-3-控制台.md               # 已接受
+├── 0003-为什么首期使用PostgreSQL与pgvector.md      # 待写
+├── 0004-文档版本与索引原子切换.md                  # 待写
+├── 0005-Agent执行状态持久化.md                    # 待写
+├── 0006-工具权限与人工审批.md                      # 待写
+├── 0007-引用协议与来源版本.md                      # 待写
+├── 0008-上下文预算与压缩.md                        # 待写
+└── 0009-评测可复现性.md                            # 待写
 ```
 
 每份 ADR 包含：背景、问题、约束、候选方案、选择、理由、负面影响和后续验证方式。
@@ -849,32 +917,33 @@ docs/adr/
 
 ```text
 PB-RAG/
-├── cmd/
-│   ├── api/
-│   └── worker/
-├── internal/
-│   ├── identity/
-│   ├── knowledge/
-│   ├── ingestion/
-│   ├── retrieval/
-│   ├── chat/
-│   ├── agent/
-│   ├── tool/
-│   ├── evaluation/
-│   ├── observability/
-│   └── platform/
-├── parser/
-├── frontend/
-├── migrations/
+├── backend/
+│   ├── src/main/java/<root>/
+│   │   ├── identity/
+│   │   ├── knowledge/
+│   │   ├── ingestion/
+│   │   ├── retrieval/
+│   │   ├── chat/
+│   │   ├── agent/
+│   │   ├── tool/
+│   │   ├── evaluation/
+│   │   ├── observability/
+│   │   └── platform/
+│   ├── src/main/resources/db/migration/
+│   └── src/test/java/<root>/
+├── parser/                  # 复杂解析需要时再创建
+├── frontend/                # Vue 3 单页应用
+│   └── src/
+│       ├── api/
+│       ├── composables/
+│       ├── layouts/
+│       ├── stores/
+│       ├── utils/
+│       └── views/
 ├── evals/
 │   ├── datasets/
 │   ├── graders/
 │   └── reports/
-├── tests/
-│   ├── integration/
-│   ├── e2e/
-│   ├── security/
-│   └── fault/
 ├── deploy/
 ├── docs/
 │   ├── adr/

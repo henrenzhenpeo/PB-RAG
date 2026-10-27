@@ -1,0 +1,14 @@
+# 可选的本地依赖。当前机器已有 Redis，应用默认连 localhost，不会自动启动这里的容器。
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: pbrag
+      POSTGRES_USER: pbrag
+      POSTGRES_PASSWORD: pbrag
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
