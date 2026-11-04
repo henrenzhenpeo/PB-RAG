@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+		PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+		"https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="dev.pbrag.knowledge.mapper.KnowledgeBaseMapper">
+
+	<resultMap id="knowledgeBaseResultMap" type="dev.pbrag.knowledge.domain.KnowledgeBase">
+		<id property="id" column="id"/>
+		<result property="workspaceId" column="workspace_id"/>
+		<result property="name" column="name"/>
+		<result property="description" column="description"/>
+		<result property="createdAt" column="created_at"/>
+		<result property="updatedAt" column="updated_at"/>
+	</resultMap>
+
+	<select id="selectAllByWorkspaceId" resultMap="knowledgeBaseResultMap">
+		SELECT id, workspace_id, name, description, created_at, updated_at
+		FROM knowledge_bases
+		WHERE workspace_id = #{workspaceId}
+		ORDER BY created_at, id
+	</select>
+
+	<select id="selectByWorkspaceIdAndId" resultMap="knowledgeBaseResultMap">
+		SELECT id, workspace_id, name, description, created_at, updated_at
+		FROM knowledge_bases
+		WHERE workspace_id = #{workspaceId}
+		  AND id = #{id}
+	</select>
+</mapper>

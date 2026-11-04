@@ -10,7 +10,7 @@
 六周版本通过减少集成数量和外围功能压缩周期，但保留以下深度：
 
 - Agent Runtime 自主实现；
-- 权限在检索和工具执行前生效；
+- Workspace 资源归属在入库、检索和引用链路中保持一致；
 - 异步任务具备幂等、重试和可观测状态；
 - 核心链路具备 Trace；
 - RAG 与 Agent 有固定评测集；
@@ -35,7 +35,7 @@
 ### 工作内容
 
 - Spring Boot、Spring MVC、Java 21 虚拟线程、PostgreSQL、pgvector、Redis 和 Docker Compose；
-- Flyway、Spring Data JDBC、配置、结构化日志、请求 ID 和 Micrometer/OpenTelemetry Trace；
+- Flyway、MyBatis-Plus、Mapper XML、配置、结构化日志、请求 ID 和 Micrometer/OpenTelemetry Trace；
 - 文档、版本、Chunk、Job、Session、Message 和 Citation 模型；
 - 文件上传和对象存储接口；
 - PostgreSQL 任务表、入库阶段和失败原因；Redis 负责唤醒、取消标记和限流；
@@ -91,13 +91,12 @@
 - 循环和超时进入明确终态；
 - 错误有结构化分类。
 
-## 第 4 周：权限、审批与可靠性
+## 第 4 周：审批、安全与可靠性
 
 ### 工作内容
 
-- Workspace 与基础 RBAC；
-- 知识库、Agent、API Key 和工具权限交集；
 - 高风险工具 Approval Gate；
+- 工具白名单、参数 Schema 与确定性执行策略；
 - 工具审计与敏感参数脱敏；
 - SSRF 防护和 Prompt Injection 基础测试；
 - Agent 服务重启处理策略；
@@ -105,12 +104,11 @@
 
 ### 验收
 
-- 跨 Workspace 越权测试全部失败；
-- Agent 不能突破当前用户权限；
+- Agent 不能突破工具白名单与确定性执行策略；
 - 高风险工具必须等待审批；
 - 审批绑定具体参数，修改参数后重新审批；
 - 敏感值不进入普通日志和 Trace；
-- 恶意文档不能改变确定性权限策略；
+- 恶意文档不能改变确定性工具策略；
 - 服务重启后任务能够恢复、补偿或明确失败。
 
 ## 第 5 周：评测、故障实验与优化
@@ -135,7 +133,7 @@
 - Tool 超时；
 - Agent 重复循环；
 - 服务重启；
-- 跨 Workspace 越权；
+- Workspace 资源错误关联；
 - Prompt Injection；
 - SSRF；
 - 日志敏感信息泄漏。
@@ -169,7 +167,7 @@
   → 工具调用与人工审批
   → Trace 定位一次失败
   → 比较两次评测运行
-  → 展示权限隔离和审计
+  → 展示工具审批和审计
 ```
 
 ### 验收
@@ -183,10 +181,10 @@
 ## 六周版本优先级
 
 ```text
-P0：入库、Production RAG、Agent Runtime、评测、权限、可靠性
+P0：入库、Production RAG、Agent Runtime、评测、数据一致性、可靠性
 P1：审批、审计、Trace、故障实验
 P2：MCP、上下文压缩、简单沙箱
 P3：Wiki、GraphRAG、多 Agent、多渠道、完整长期记忆
 ```
 
-如果进度落后，依次移除 P2、减少文档格式、减少领域工具和简化前端；不得移除 P0 的评测、权限和失败处理。
+如果进度落后，依次移除 P2、减少文档格式、减少领域工具和简化前端；不得移除 P0 的评测、数据一致性和失败处理。

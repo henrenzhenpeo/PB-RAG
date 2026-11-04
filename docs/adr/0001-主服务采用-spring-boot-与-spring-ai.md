@@ -1,8 +1,12 @@
 # ADR 0001：主服务采用 Spring Boot 与 Spring AI
 
+> 更新说明：身份、Workspace 权限和跨租户隔离部分已由 ADR 0004 调整；首期采用单用户模式，Workspace 仅作为知识资源分组。
+
 - 状态：已接受
 - 日期：2026-10-27
-- 影响文档：`AGENTS.md`、`docs/PROJECT_CONTEXT.md`、`docs/ROADMAP_6_WEEKS.md`、`docs/HANDOFF.md`、`docs/PB-RAG企业级Agent工程实战方案.md`、`docs/WEKNORA_项目拆解与Agent产品路线图.md`
+- 影响文档：`AGENTS.md`、`docs/PROJECT_CONTEXT.md`、`docs/ROADMAP_6_WEEKS.md`、`docs/HANDOFF.md`
+
+> 持久层框架选择已由 ADR 0003 局部替代：普通业务 CRUD 使用 MyBatis-Plus，复杂 PostgreSQL 查询与 Flyway 边界保持不变。
 
 ## 背景
 
@@ -60,7 +64,7 @@ PB-RAG 要获得的是企业级知识 Agent 的核心工程经验：异步入库
 
 Agent Runtime 提供 `start`、`resume` 和 `cancel`。内部包含 Run/Step 状态机、最大迭代、重复工具调用检测、单步和总任务超时、用户取消、工具错误分类与重试、人工审批暂停与恢复、上下文预算、Run/Step 持久化、SSE 运行事件，以及服务重启后的恢复策略。从第 3 周起，循环直接使用 `ChatModel` 和显式 Tool Registry。
 
-Production RAG 自行编排并保存中间状态：权限过滤、Query Rewrite、向量检索、PostgreSQL FTS/BM25、RRF、Rerank、邻接扩展、去重、上下文组装和引用生成。权限条件使用绑定参数写入 SQL。Spring AI 的 metadata filter 可以辅助第一周基线，但不能代替 Workspace 隔离。
+Production RAG 自行编排并保存中间状态：Workspace 资源过滤、Query Rewrite、向量检索、PostgreSQL FTS/BM25、RRF、Rerank、邻接扩展、去重、上下文组装和引用生成。资源条件使用绑定参数写入 SQL。Spring AI 的 metadata filter 可以辅助第一周基线，但不能代替领域查询和数据库约束。
 
 `ChatMemory` 只提供模型当前回合需要的上下文。完整会话、Agent Step 和审计分别落在 `sessions`、`messages`、`agent_runs`、`agent_steps`、`tool_executions` 和 `approval_requests`。
 
@@ -106,6 +110,6 @@ Spring AI 已经提供模型调用、Embedding、PGvector、工具 Schema、MCP�
 
 - 第 1 周纵向切片使用 MVC、JDBC、Flyway、PostgreSQL 任务表和 Spring AI 的 Chat/Embedding 基线完成。
 - 第 3 周用测试覆盖取消、超时、重复工具调用和重启恢复，并证明循环由本项目的 Runtime 推进。
-- 第 4 周用跨 Workspace 测试证明未授权内容不会进入检索结果和工具执行。
+- 第 4 周验证 Workspace 资源归属、工具策略、审批、审计和安全防护；身份授权按 ADR 0004 延后。
 - 第 5 周在同一数据集上比较自研流水线与 Spring AI 默认 Advisor：Recall@K、引用准确率、延迟、Token、可观测性和权限控制。
 - 每次评测记录数据集、文档、Prompt、模型、配置和代码版本。

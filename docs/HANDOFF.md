@@ -1,104 +1,55 @@
-# PB-RAG 当前交接记录
+# PB-RAG 当前交接
 
-> 本文件记录当前状态，而不是保存完整聊天历史。每次完成重要工作后更新。
+> 这里只记录当前事实、风险和下一步，不保存聊天历史。稳定目标与架构见 `PROJECT_CONTEXT.md`，阶段计划见 `ROADMAP_6_WEEKS.md`。
 
 ## 当前阶段
 
-Spring Boot 与 Vue 3 骨架已生成。PostgreSQL 和 Redis 使用 `application.yml` 中的地址，尚未连接服务器。
+第一阶段数据地基已完成，正在进入 Markdown 上传与异步入库纵向链路。
+
+外部 PostgreSQL、pgvector 与 Redis 已部署，后端曾由项目发起人确认可以正常启动。当前代码后续又调整了 MyBatis 分层，尚未重新编译验证。
 
 ## 已完成
 
-- 完成 WeKnora 产品、用户、架构和源码学习方向梳理；
-- 完成 PB-RAG 企业级 Agent 工程实战总方案；
-- 将执行周期从十二周压缩为六周；
-- 建立仓库级协作规则、稳定项目上下文和跨对话交接机制；
-- 建立 Prompt 目录规范与两份初始基线 Prompt；
-- 接受 ADR 0001：主服务改为 Spring Boot 与 Spring AI，并同步路线和工程方案；
-- 用 Spring Initializr 生成 `backend/`：Spring Boot 4.1.2、Spring AI 2.0.1、Java 21、包名 `dev.pbrag`；
-- 用 create-vue 生成 `frontend/`：Vue 3、TypeScript、Vite、Vue Router、Pinia、TDesign。
-- PostgreSQL 与 Redis 只保留连接地址，不在本机安装服务；
-- 接受 ADR 0002：前端使用精简 Vue 3 控制台，并写入第 4.2 节架构图。
+- Spring Boot 4.1.2、Java 21、Spring AI 2.0.1 后端骨架；
+- Vue 3、TypeScript、Vite、Pinia、TDesign 前端骨架；
+- PostgreSQL、pgvector、Redis 外部连接配置；
+- Flyway V1 启用 vector，V2 创建 Workspace、知识库、文档、版本、Chunk 和入库 Job；
+- Workspace 与知识库创建、列表、详情 API；
+- 统一 `ApiResponse<T>`、404、409 和参数错误响应；
+- 入库 Job 状态机及其领域测试；
+- MyBatis-Plus 与标准 `Controller → Service → ServiceImpl → Mapper → Mapper.xml` 分层；
+- 单用户范围：暂缓多租户、成员关系和 RBAC，Workspace 仅作为知识资源分组。
 
-## 当前有效文档
+## 当前关键决策
 
-- `AGENTS.md`
-- `docs/PROJECT_CONTEXT.md`
-- `docs/ROADMAP_6_WEEKS.md`
-- `docs/PB-RAG企业级Agent工程实战方案.md`
-- `docs/WEKNORA_项目拆解与Agent产品路线图.md`
-- `prompts/README.md`
-- `docs/adr/0001-主服务采用-spring-boot-与-spring-ai.md`
-- `docs/adr/0002-前端采用精简-vue-3-控制台.md`
-- `backend/`
-- `frontend/`
-
-## 已确认决策
-
-- 项目目标是获得企业级 Agent 核心开发经验，不追求 WeKnora 功能平替；
-- 采用六周执行周期；
-- 减少功能宽度，但保留 Agent Runtime、权限、评测、可观测与失败处理；
-- WeKnora 作为参考实现，核心机制需经过独立设计和实现；
-- 新任务通过仓库文档恢复上下文，不依赖聊天记忆；
-- 主服务采用 Java 21、Spring Boot、Spring MVC 和虚拟线程；
-- Spring AI 负责模型、Embedding、工具 Schema、第一周向量基线和观测；
-- Agent Runtime、Production RAG、权限、任务状态、引用和评测由本项目实现；
-- 主持久化使用 JDBC 与 Flyway；PostgreSQL 任务表是任务事实来源，Redis 负责唤醒、取消标记和限流；
-- 首期在 Java 进程内解析 Markdown 和普通 PDF，复杂解析再接入 Python；
-- 构建工具为 Maven，Java 21，包名 `dev.pbrag`，Spring Boot 4.1.2，Spring AI 2.0.1；
-- PostgreSQL 和 Redis 由外部服务器提供，地址维护在 `backend/src/main/resources/application.yml`；
-- 前端采用 Vue 3、TypeScript、Vite、Vue Router、Pinia 和 TDesign，页面只覆盖知识库、对话、Agent 运行和评测。
-
-## 尚待确认
-
-- 每周实际可投入时间；
-- `application.yml` 中的 PostgreSQL 和 Redis 服务器地址、账号；
-- PostgreSQL 关键词检索采用原生 FTS 还是 ParadeDB；
-- 首个远程模型、Embedding 和 Rerank 供应商；
-- 是否已有可作为首批数据集的技术文档。
+- Spring AI 只提供模型、Embedding、工具 Schema、向量基线与观测；Agent Runtime、Production RAG、任务状态、引用和评测由本项目实现；
+- Flyway 是唯一 DDL 管理方式；MyBatis-Plus 不自动建表；
+- 简单写入可使用 `BaseMapper`，定制查询及 pgvector、FTS、RRF、`SKIP LOCKED`、批处理 SQL 放在 Mapper XML；
+- PostgreSQL Job 表是任务事实来源，Redis 只负责唤醒、取消标记和限流；
+- 首期在 Java 进程内解析 Markdown 和普通 PDF；
+- 不实现多租户和 RBAC，但保留 `workspace_id` 与复合外键确保资源归属一致。
 
 ## 当前风险
 
-- 六周范围紧，需要严格限制解析格式、外部集成和 UI 工作量；
-- 尚未建立 WeKnora 对照基线数据；
-- 尚未建立真实评测问题集；
-- 应用要等 `application.yml` 指向可连接的 PostgreSQL 和 Redis 后才能完成启动验证；
-- 实现时若把 Agent 循环或 Production RAG 交给 Spring AI 默认 Advisor，ADR 0001 的学习目标会失效。第 3 周和第 5 周要用测试与同数据集对比守住这条边界。
+- 最新 Service/Mapper/XML 重构按要求没有运行 Maven 编译；
+- Flyway V2 尚未纳入自动化 PostgreSQL 集成测试；
+- 真实模型、Embedding 与 Rerank 供应商尚未确定；
+- RAG 固定评测数据集尚未建立；
+- 当前没有用户级授权，只适合单用户或由部署边界保护的环境。
 
-## 下一步推荐动作
+## 下一步
 
-编写《第一阶段技术设计》，确认首个纵向切片的：
+实现 Markdown 上传与入库 Job 原子创建：
 
-1. 把 `application.yml` 里的数据库和 Redis 地址改成服务器地址并启动；
-2. 模块边界；
-3. 最小数据模型；
-4. 文档入库状态机；
-5. API 和 SSE 事件；
-6. 两周任务拆分；
-7. 第一批测试与验收标准。
+1. 定义对象存储接口和本地文件实现；
+2. 流式计算 SHA-256，限制文件类型和大小；
+3. 在同一事务中创建 Document、DocumentVersion 与 IngestionJob；
+4. 重复内容返回已有版本或任务，不生成重复数据；
+5. 上传接口快速返回 Job ID；
+6. 增加 PostgreSQL Flyway、资源归属和幂等集成测试。
 
-## 最近验证
+## 验证状态
 
-- 2026-10-24：确认所有上下文、路线、交接和 Prompt 文件存在；
-- 2026-10-24：执行 `git diff --check`，未发现空白或补丁格式问题；
-- 2026-10-24：检查 `AGENTS.md` 的启动顺序与文档交叉引用，路径一致；
-- 2026-10-27：主服务决策改为 Spring Boot 与 Spring AI，已写入 ADR 0001，并同步 `AGENTS.md`、项目上下文、六周路线、工程方案和 WeKnora 拆解中的 PB-RAG 设计建议；
-- 2026-10-27：生成 `backend/` 官方骨架。PostgreSQL 与 Redis 只在 `application.yml` 保留地址，未在本机安装。上下文测试在地址可连接前保持禁用；
-- 2026-10-27：当前系统架构图写入 `docs/PB-RAG企业级Agent工程实战方案.md` 第 4.1 节；
-- 2026-10-27：接受 ADR 0002，前端架构图写入同一方案第 4.2 节；
-- 2026-10-27：代码架构图写入同一方案第 4.3 节；
-- 2026-10-27：用 create-vue 生成 `frontend/`，接入 TDesign、路由、Pinia、axios 和 SSE。需要 Node.js 22。
-
-## 更新模板
-
-后续更新本文件时保留以下结构：
-
-```text
-当前阶段
-已完成
-当前有效文档
-已确认决策
-尚待确认
-当前风险
-下一步推荐动作
-最近验证
-```
+- `git diff --check`：已通过；
+- Mapper XML：已完成 XML 语法解析检查；
+- Maven 编译/测试：遵照项目发起人要求，本轮未执行。

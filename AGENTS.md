@@ -23,14 +23,14 @@ sessions do not inherit stale decisions.
 Work in this order unless the user explicitly changes it:
 
 1. A complete vertical slice that runs end to end
-2. Correctness, authorization, and data isolation
+2. Correctness, resource-scope consistency, and data integrity
 3. Observability, reproducibility, and evaluation
 4. Failure handling and recovery
 5. Developer experience
 6. Additional features and UI polish
 
 Reduce feature breadth before reducing engineering depth. Do not trade away
-evaluation, permissions, traceability, idempotency, or failure handling merely to
+evaluation, deterministic security, traceability, idempotency, or failure handling merely to
 add more integrations.
 
 ## Learning rules
@@ -51,19 +51,21 @@ add more integrations.
   Python parser only when layout, OCR, tables, or complex Office documents
   require it.
 - Treat Spring AI as model and tool infrastructure. Implement the Agent
-  Runtime, production retrieval, authorization, job state, citations, and
+  Runtime, production retrieval, job state, citations, and
   evaluation in this repository. The accepted stack is
   `docs/adr/0001-主服务采用-spring-boot-与-spring-ai.md`.
-- Preserve workspace scope through HTTP, service, repository, retrieval, tool,
-  trace, and audit layers.
-- Apply authorization before retrieval. Never retrieve unauthorized content and
-  depend on the model to hide it.
+- In the first release, Workspace is a logical knowledge grouping rather than a
+  tenant or authorization boundary. Preserve its resource scope through HTTP,
+  service, repository, retrieval, trace, and audit layers.
+- Multi-tenancy, users, memberships, and RBAC are deferred. When authorization is
+  introduced later, it must run before retrieval and tool execution and must not
+  depend on the model to hide content.
 - Version documents, chunks, Agents, tools, prompts, and evaluation datasets when
   their changes affect reproducibility.
 - Bind citations to a document version and stable source position.
 - Make asynchronous jobs idempotent and expose explicit stage, retry, and failure
   information.
-- Tool execution must support schema validation, authorization, timeout,
+- Tool execution must support schema validation, policy checks, timeout,
   cancellation, structured errors, tracing, and audit.
 - Security policy must be enforced by deterministic code, not only by prompts.
 - Avoid introducing a new database, framework, service, or abstraction without a
@@ -78,7 +80,8 @@ For every core feature, consider:
 - end-to-end behavior;
 - duplicate and concurrent requests;
 - timeout, cancellation, retry, and restart;
-- authorization and tenant isolation;
+- resource-scope consistency and database integrity;
+- authorization isolation when an identity system is introduced;
 - sensitive-data handling;
 - AI quality regression when applicable.
 
