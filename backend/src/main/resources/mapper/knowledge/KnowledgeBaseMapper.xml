@@ -26,4 +26,12 @@
 		WHERE workspace_id = #{workspaceId}
 		  AND id = #{id}
 	</select>
+
+	<select id="lockByWorkspaceIdAndId" resultType="java.util.UUID">
+		SELECT id
+		FROM knowledge_bases
+		WHERE workspace_id = #{workspaceId}
+		  AND id = #{id}
+		FOR UPDATE
+	</select>
 </mapper>

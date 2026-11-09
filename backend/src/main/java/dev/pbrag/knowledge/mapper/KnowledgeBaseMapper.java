@@ -16,4 +16,8 @@ public interface KnowledgeBaseMapper extends BaseMapper<KnowledgeBase> {
 	KnowledgeBase selectByWorkspaceIdAndId(
 			@Param("workspaceId") UUID workspaceId,
 			@Param("id") UUID id);
+
+	UUID lockByWorkspaceIdAndId(
+			@Param("workspaceId") UUID workspaceId,
+			@Param("id") UUID id);
 }

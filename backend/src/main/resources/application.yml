@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8088
 
 spring:
   application:
@@ -7,20 +7,25 @@ spring:
   threads:
     virtual:
       enabled: true
-  # 不在本机启动容器。PostgreSQL 和 Redis 直接使用下面的地址，稍后改成服务器地址。
+  # 不在本机启动容器。本地开发默认通过 SSH 隧道连接远程 PostgreSQL 和 Redis。
   docker:
     compose:
       enabled: false
   datasource:
-    url: jdbc:postgresql://localhost:5432/pbrag
-    username: pbrag
-    password: pbrag
+    url: ${PBRAG_DB_URL:jdbc:postgresql://116.62.53.31:5432/pbrag}
+    username: ${PBRAG_DB_USERNAME:pbrag}
+    password: ${PBRAG_DB_PASSWORD}
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${PBRAG_REDIS_HOST:116.62.53.31}
+      port: ${PBRAG_REDIS_PORT:6379}
+      password: ${PBRAG_REDIS_PASSWORD}
   flyway:
     enabled: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   ai:
     model:
       chat: none
@@ -34,6 +39,9 @@ spring:
       type: none
 
 management:
+  tracing:
+    sampling:
+      probability: ${PBRAG_TRACE_SAMPLING_PROBABILITY:1.0}
   endpoints:
     web:
       exposure:
@@ -41,6 +49,34 @@ management:
   endpoint:
     health:
       show-details: always
+
+logging:
+  include-application-name: false
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %clr(%-5level) %clr(%logger{28}){cyan} - %msg%n"
+    file: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] [requestId=%X{requestId:-} traceId=%X{traceId:-} spanId=%X{spanId:-} workspaceId=%X{workspaceId:-}] %logger - %msg%n"
+  file:
+    name: ${PBRAG_LOG_FILE:./logs/pbrag.log}
+  logback:
+    rollingpolicy:
+      max-file-size: 50MB
+      max-history: 30
+      total-size-cap: 1GB
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: input
+
+pbrag:
+  storage:
+    local:
+      root: ${PBRAG_STORAGE_ROOT:./data/objects}
+  ingestion:
+    max-file-size: 5242880
 
 ---
 spring:
@@ -60,3 +96,19 @@ spring:
         index-type: HNSW
         distance-type: COSINE_DISTANCE
         dimensions: 1536
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+logging:
+  level:
+    dev.pbrag.identity.mapper: DEBUG
+    dev.pbrag.knowledge.mapper: DEBUG
+    dev.pbrag.ingestion.mapper: DEBUG

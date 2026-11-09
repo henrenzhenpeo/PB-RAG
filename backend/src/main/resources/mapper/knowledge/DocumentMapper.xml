@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="dev.pbrag.knowledge.mapper.DocumentMapper">
+	<resultMap id="documentListItemMap" type="dev.pbrag.knowledge.domain.DocumentListItem">
+		<id property="documentId" column="document_id" javaType="java.util.UUID"/>
+		<result property="workspaceId" column="workspace_id" javaType="java.util.UUID"/>
+		<result property="knowledgeBaseId" column="knowledge_base_id" javaType="java.util.UUID"/>
+		<result property="displayName" column="display_name"/>
+		<result property="mediaType" column="media_type"/>
+		<result property="documentCreatedAt" column="document_created_at"/>
+		<result property="documentUpdatedAt" column="document_updated_at"/>
+		<result property="versionId" column="version_id" javaType="java.util.UUID"/>
+		<result property="versionNumber" column="version_number"/>
+		<result property="contentSha256" column="content_sha256"/>
+		<result property="versionCreatedAt" column="version_created_at"/>
+		<result property="jobId" column="job_id" javaType="java.util.UUID"/>
+		<result property="jobStatus" column="job_status"/>
+		<result property="jobStage" column="job_stage"/>
+		<result property="attemptCount" column="attempt_count"/>
+		<result property="maxAttempts" column="max_attempts"/>
+		<result property="errorCode" column="error_code"/>
+		<result property="errorMessage" column="error_message"/>
+		<result property="availableAt" column="available_at"/>
+		<result property="jobCreatedAt" column="job_created_at"/>
+		<result property="jobUpdatedAt" column="job_updated_at"/>
+	</resultMap>
+
+	<select id="selectAllByKnowledgeBase" resultMap="documentListItemMap">
+		SELECT d.id AS document_id,
+		       d.workspace_id,
+		       d.knowledge_base_id,
+		       d.display_name,
+		       d.media_type,
+		       d.created_at AS document_created_at,
+		       d.updated_at AS document_updated_at,
+		       v.id AS version_id,
+		       v.version_number,
+		       v.content_sha256,
+		       v.created_at AS version_created_at,
+		       j.id AS job_id,
+		       j.status AS job_status,
+		       j.stage AS job_stage,
+		       j.attempt_count,
+		       j.max_attempts,
+		       j.error_code,
+		       j.error_message,
+		       j.available_at,
+		       j.created_at AS job_created_at,
+		       j.updated_at AS job_updated_at
+		FROM documents d
+		JOIN document_versions v
+		  ON v.workspace_id = d.workspace_id
+		 AND v.id = d.current_version_id
+		LEFT JOIN ingestion_jobs j
+		  ON j.workspace_id = v.workspace_id
+		 AND j.document_version_id = v.id
+		WHERE d.workspace_id = #{workspaceId}
+		  AND d.knowledge_base_id = #{knowledgeBaseId}
+		ORDER BY d.created_at DESC, d.id DESC
+	</select>
+
+	<update id="updateCurrentVersion">
+		UPDATE documents
+		SET current_version_id = #{versionId}, updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId}
+		  AND id = #{documentId}
+	</update>
+</mapper>
