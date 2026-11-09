@@ -68,7 +68,7 @@ WeKnora 是对照组，不是最终交付物。学习的是可迁移机制，而
 - SSE 流式问答与引用；
 - 自主 Agent Runtime；
 - 3～5 个只读工具；
-- 单用户模式下的 Workspace 知识分组；
+- 已登录用户共享的 Workspace 知识分组；
 - 一个高风险工具审批样例；
 - Trace、审计、评测和故障实验。
 
@@ -96,13 +96,27 @@ WeKnora 是对照组，不是最终交付物。学习的是可迁移机制，而
 - 持久化：PostgreSQL + pgvector、MyBatis-Plus、Flyway；业务模块采用 Controller、Service、ServiceImpl、Mapper、Mapper XML 分层，具体边界见 ADR 0003；
 - 任务：PostgreSQL 任务表是事实来源；Redis 负责唤醒、取消标记和限流；
 - 解析：首期在 Java 进程内处理 Markdown 和普通 PDF；复杂解析再按接口接入 Python；
-- 安全：首期不实现登录、多租户和 RBAC；工具策略、审批、SSRF 与 Prompt Injection 防护仍由确定性代码执行；
+- 安全：已加入邮箱注册、登录和个人资料；已登录用户暂时共享 Workspace。多租户和 RBAC 仍未实现；工具策略、审批、SSRF 与 Prompt Injection 防护仍由确定性代码执行，见 ADR 0005；
 - 部署：Docker Compose；
 - 可观测：Micrometer Observation + OpenTelemetry，按需要接入 Langfuse；
 - 测试：JUnit 5 + Testcontainers；
 - 架构：包级模块化单体。Spring AI 提供模型和工具基础设施；Agent Runtime、Production RAG、任务状态、引用和评测由本项目实现。
 
 尚未形成 ADR 的选择都可以通过设计和实验调整，不视为不可改变的承诺。脚手架已锁定 Maven、Java 21、包名 `dev.pbrag`、Spring Boot 4.1.2 和 Spring AI 2.0.1。PostgreSQL 与 Redis 的连接地址写在 `backend/src/main/resources/application.yml`，由外部服务器提供。
+
+### 6.1 当前模型服务暂定基线
+
+为优先控制开发和评测成本，首期暂定使用阿里云百炼华北 2 地域：
+
+- Chat/RAG：`qwen3.7-flash`；
+- Agent 初始模型：`qwen3.7-flash`；
+- Agent 质量备选：`qwen3.7-plus` 或 `deepseek-flash`；
+- Embedding：`qwen3.7-text-embedding-flash`；
+- Rerank：第二周接入 `qwen3.7-text-rerank`；
+- Chat 与 Embedding 优先使用 OpenAI-compatible 接口；
+- Rerank 使用项目内独立适配器封装，不把供应商协议扩散到 Production RAG 编排层。
+
+这是一项可通过评测调整的当前基线，不是长期供应商锁定。实际接入前必须重新确认模型可用性、具体版本、价格、限流和数据处理条款，并确认 Embedding 输出维度；数据库向量列、模型配置和索引版本必须保持一致。评测和 Trace 应记录供应商、地域、模型 ID、具体模型版本及关键参数，避免仅记录可能自动升级的别名。
 
 ## 7. 当前架构与第一阶段设计
 
@@ -132,7 +146,7 @@ workspaces
                  └─ ingestion_jobs
 ```
 
-- Workspace 只是知识资源分组，不是租户或授权边界；
+- Workspace 只是知识资源分组，不是租户或授权边界；所有已登录用户目前都能访问；
 - 业务 ID 使用 UUID，由应用生成；
 - 文档版本、Chunk 和引用绑定稳定的版本及来源位置；
 - `workspace_id` 与复合外键用于资源归属和防止错误关联；
@@ -157,9 +171,26 @@ GET  /api/workspaces
 POST /api/workspaces/{workspaceId}/knowledge-bases
 GET  /api/workspaces/{workspaceId}/knowledge-bases
 GET  /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}
+POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/documents
+GET  /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/documents
+GET  /api/workspaces/{workspaceId}/ingestion-jobs/{jobId}
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/auth/me
+PUT  /api/auth/me
 ```
 
-API 统一返回 `ApiResponse<T>`，同时保留正确 HTTP 状态码。下一条纵向链路是 Markdown 上传，在同一事务中创建 Document、DocumentVersion 和 IngestionJob。
+API 统一返回 `ApiResponse<T>`，同时保留正确 HTTP 状态码。Markdown 上传流式计算 SHA-256，本地对象存储成功后在同一数据库事务中创建 Document、DocumentVersion 和 IngestionJob；数据库失败时补偿删除本次文件。同一知识库内相同内容返回已有版本与 Job，不生成重复数据；当前上传 API 每个新内容创建新 Document，未来通过显式重传 API 创建已有 Document 的新版本。文档列表返回每个 Document 的当前版本和对应入库 Job，查询始终同时约束 `workspace_id` 与 `knowledge_base_id`。
+
+### 7.5 日志与链路关联
+
+- 所有 `/api/**` 请求使用 `X-Request-Id` 关联；安全的客户端 ID 会被保留，否则由服务端生成 UUID，并在响应头返回；
+- Request ID、Trace ID、Span ID 与路径中的 Workspace ID 写入 MDC；控制台使用精简的人类可读格式，滚动文件保留完整关联字段；访问完成日志记录方法、路径、状态码和耗时，仅在存在时追加内容长度与稳定错误码；
+- 日志默认同时写控制台与滚动文件，单文件 50 MB、保留 30 个历史周期、总量上限 1 GB；
+- Micrometer Tracing 使用 OpenTelemetry bridge 生成 HTTP Trace/Span 关联，暂未配置远程 OTLP exporter；
+- MyBatis SQL 日志仅在 `local` Profile 开启，默认环境不打印 SQL 参数；
+- 禁止在访问日志中记录请求体、响应正文、文件内容、Authorization、Cookie、密钥、数据库密码和 RAG 原文。
 
 ## 8. 项目质量原则
 
@@ -178,7 +209,8 @@ API 统一返回 `ApiResponse<T>`，同时保留正确 HTTP 状态码。下一�
 - `HANDOFF.md`：当前进度、风险和下一步，只保留现状；
 - `adr/0001-主服务采用-spring-boot-与-spring-ai.md`：主服务与 Spring AI 边界；
 - `adr/0003-业务持久层采用-mybatis-plus.md`：Spring/MyBatis 分层及 SQL 边界；
-- `adr/0004-首期暂缓多租户与-rbac.md`：单用户范围与 Workspace 语义。
+- `adr/0004-首期暂缓多租户与-rbac.md`：Workspace 语义，用户登录部分已被 ADR 0005 覆盖；
+- `adr/0005-增加账号认证但工作区继续共享.md`：账号认证与共享工作区的当前边界。
 
 运行时 Prompt 规范独立保存在仓库根目录的 `prompts/README.md`。
 
