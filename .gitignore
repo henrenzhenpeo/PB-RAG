@@ -1,2 +1,6 @@
 .DS_Store
 .idea/
+
+# Local environment secrets
+.env
+**/.env
