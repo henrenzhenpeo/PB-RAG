@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-第一阶段数据地基、文档上传、Java 解析/分块 Worker 与向量写入编排已完成。下一步确认百炼 Embedding 实际维度与接口配置，在真实 PostgreSQL 上验证 Worker、HNSW 迁移和端到端检索。
+第一周纵向闭环代码已完成：真实文档入库、百炼 Embedding、pgvector Top-K、千问流式回答、引用原文、会话/消息/引用持久化和刷新恢复均已接入。下一步先在真实数据库应用 V6 并回测正常完成、中断、停止和刷新恢复，再进入 Hybrid、Rerank 与评测。
 
 外部 PostgreSQL、pgvector 与 Redis 已部署。当前代码已在 JDK 21 下通过编译和单元测试，并在真实 PostgreSQL 上成功启动；Flyway V3 已应用。尚未通过 Testcontainers 自动验证完整 Spring 上下文、Flyway 与 Mapper SQL。
 
@@ -39,6 +39,20 @@
 - 标题感知分块策略保存字符偏移、Markdown 行号、标题路径和 PDF 页码，Chunk 按文档版本原子替换并记录解析/分块版本；
 - Worker 使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 领取任务，支持租约、过期恢复、有限重试和结构化失败；只有存在 `EmbeddingModel` 时才消费任务，避免未配置模型时伪造向量；
 - Embedding 写入前校验输出维度，Flyway V4 为 `chunks.embedding` 增加 HNSW cosine 索引；前端上传入口已同时接受 Markdown 与普通 PDF。
+- 已接入阿里云百炼 OpenAI-compatible 接口：Chat 使用 `qwen3.7-flash`，Embedding 使用 `qwen3.7-text-embedding-flash`；真实文档入库任务已完成，1024 维校验和向量写入通过 Worker 完成条件验证；
+- 新增 Workspace/知识库双重约束的 pgvector Top-K 检索，只查询文档当前版本并返回 Chunk、文档版本、来源位置和相似度；
+- 新增最小 RAG 闭环：确定性无证据拒答、版本化 Prompt、千问流式回答、结构化 SSE 事件和引用侧栏；文档内容按不可信数据处理，不允许覆盖系统规则。
+- 知识问答入口已提升到工作台侧栏一级，问答页负责选择知识库；知识库详情页不再承载问答入口。
+- 修复真实 RAG 请求中 MyBatis 将 SQL `Integer`/`Double` 错配到 `RetrievalHit` 原始类型构造器导致的 500；检索阶段异常现在也会作为结构化 SSE 错误返回。
+- SSE 客户端主动停止或离开页面导致连接断开时，后端不再尝试向已提交的 `text/event-stream` 响应写入 JSON `ApiResponse`，避免 `HttpMessageNotWritableException` 二次异常。
+- 知识问答前端改为多轮会话式交互，逐轮展示问题、生成状态、回答与引用，支持停止、失败重试、清空和引用切换；已有部分正文时将流异常标记为“生成中断”并保留内容，不再显示整次问答失败。有限 SSE 的传输异常不再自动重复 POST。
+- RAG 错误协议区分检索失败 `RAG_RETRIEVAL_FAILED` 与模型流中断 `RAG_GENERATION_INTERRUPTED`，便于前端给出准确恢复操作。
+- 修复千问流末尾元数据帧被误判为生成中断：模型返回无文本的完成/用量帧时直接忽略，不再让 Reactor `map` 因空值抛出 `NullPointerException`。
+- 后端启动类通过 Spring Boot `Banner` API 输出 PB-RAG ASCII 标识、Knowledge Agent 副标题和当前 Spring Boot 版本，不依赖额外资源文件。
+- RAG 从仅流式输出正文扩展为全链路阶段反馈：请求后立即发送“正在检索”，检索完成发送证据数量，再增量输出模型正文；Embedding/数据库检索调度到 bounded-elastic，避免阻塞 SSE 写出线程。
+- 引用侧栏现展示最多 500 字符的安全原文摘录，并继续保留文档名、Chunk、版本、来源位置和相似度；
+- 新增 Flyway V6 与 `chat_sessions`、`chat_messages`、`message_citations`：会话绑定当前用户和知识库，每轮问题/回答使用 `turn_id` 配对，引用绑定助手消息；
+- 流式助手消息从 `STREAMING` 进入 `COMPLETED` 或 `INTERRUPTED`，正常完成保存全文，客户端停止或模型异常保留部分正文；刷新页面可通过 session 查询恢复历史消息与引用，服务重启遗留的流式消息会收敛为中断状态。
 
 ## 当前关键决策
 
@@ -53,22 +67,25 @@
 
 - 后端已在 JDK 21 下通过编译与单元测试，但 Spring 上下文及 Mapper SQL 尚未通过真实 PostgreSQL 自动化集成测试；
 - Flyway V2 尚未纳入自动化 PostgreSQL 集成测试；
-- 模型服务已形成暂定基线，但尚未完成账号、密钥、具体版本、Embedding 维度和接口连通性验证；
+- 百炼账号、API Key、OpenAI-compatible 地址、Chat 与 Embedding 模型已经接通；仍需用固定评测集记录具体模型版本、质量、延迟和成本基线；
 - RAG 固定评测数据集尚未建立；
 - 当前没有 Workspace 成员授权；所有已登录用户共享资源，部署边界仍须限制可注册人群。
 - 已有账号认证但没有 Workspace 成员授权；开放注册仅适合受控开发环境，公网部署前需注册限制、登录限流、密码重置与会话清理；
-- 百炼官方文档确认 `qwen3.7-text-embedding-flash` 默认输出 1024 维、同步接口单批最多 20 条；代码配置与 V5 迁移已统一为 1024 维/20 条，但当前环境没有模型 API Key，尚未完成真实接口输出回测；
+- `qwen3.7-text-embedding-flash` 已按 1024 维、单批最多 20 条运行，真实入库任务已完成；后续模型或维度变更仍必须通过新迁移和索引版本处理；
 - Worker 的 PostgreSQL 领取、租约恢复、V4 HNSW 迁移与向量写入 SQL 已完成代码和 XML 语法验证，尚未通过 Testcontainers 或真实数据库集成测试。
+- Flyway V6 新增的问答会话、消息与引用表尚待本次代码启动后在真实开发库执行，并回测流中断和页面刷新恢复。
 
 ## 下一步
 
-完成模型确认与真实数据库闭环：
+完成第一周 RAG 闭环并建立第二周检索基线：
 
-1. 配置百炼华北 2 OpenAI-compatible 地址、API Key 和模型 ID，用真实响应验证默认 1024 维及批量调用；
-2. 在目标 PostgreSQL 上验证 Flyway V5 的维度迁移和 HNSW 重建；
-3. 跑通上传、领取、解析、分块、向量写入与 Job 完成；
-4. 增加 Testcontainers 覆盖 `SKIP LOCKED` 并发领取、租约过期、重复消费、V5 HNSW 迁移和资源归属；
-5. 实现 Workspace 约束下的基础 Top-K 向量检索，再进入 Hybrid/Rerank。
+1. 使用已完成入库的真实文档回测 Top-K 检索、SSE 回答、无证据拒答和版本级引用；
+2. 建立首批 30～50 条固定问题、期望证据和拒答样本，记录 Recall@K、引用准确率、延迟和模型配置；
+3. 增加 PostgreSQL 全文关键词检索，与向量结果通过 RRF 融合；
+4. 通过独立适配器接入 `qwen3.7-text-rerank`，保存向量、关键词、融合和重排的中间结果；
+5. 数据库自动化集成验证暂不阻塞当前闭环，完成基础 RAG 后再补 `SKIP LOCKED`、租约恢复、迁移和资源归属测试。
+
+Docker 一键启动完整环境和 CI 流水线按当前决定降为最低优先级，放到核心 Production RAG、Agent Runtime 与评测闭环之后处理，不阻塞当前迭代。
 
 ## 模型接入提醒
 
@@ -80,7 +97,7 @@
 - 第二周接入 `qwen3.7-text-rerank`，通过独立适配器封装；
 - Agent 质量不足时，再用固定评测集比较 `qwen3.7-plus` 与 `deepseek-flash`。
 
-接入前继续核对当时的官方价格、具体模型版本和限流；配置密钥后用真实响应断言 1024 维，再运行完整入库闭环。
+当前百炼模型已经接入。进入评测前继续记录当时的官方价格、具体模型版本、限流和数据处理条款，避免只记录可能自动升级的模型别名。
 
 ## 验证状态
 
@@ -93,6 +110,11 @@
 - 前端 `npm run lint`：已通过。
 - 登录注册 UI：前端类型检查、lint 与独立输出目录生产构建已通过，并在本地浏览器完成桌面端、390px 窄屏、登录空表单校验及登录/注册模式切换检查；常规 `dist` 构建曾因已有 Vite 进程占用 `dist/favicon.ico` 报 `EBUSY`，改用独立输出目录验证成功。
 - Java 解析/分块与 Worker：`mvnw test`（JDK 21）20 个测试，19 个通过、1 个既有 Spring 上下文测试跳过；前端 `npm run type-check` 与 `npm run lint` 通过。
+- 知识问答入口与检索映射修复：前端 `npm run type-check`、`npm run build-only` 通过；后端 JDK 21 `mvnw test` 通过（34 个测试，33 个通过、1 个既有 Spring 上下文测试跳过），随后新增检索异常 SSE 回归测试。
+- SSE 断开异常处理：JDK 21 定向运行 `ApiExceptionHandlerTests` 与 `RagChatServiceTests`，3 个测试全部通过。
+- 问答交互与错误语义优化：前端 `npm run type-check`、`npm run build-only` 通过；JDK 21 定向运行 `RagChatServiceTests` 与 `ApiExceptionHandlerTests`，4 个测试全部通过。
+- 千问末尾空文本帧修复：JDK 21 定向运行 `RagChatServiceTests`，4 个测试全部通过，包含“正文帧 + 元数据空帧 + completed”回归场景。
+- 全链路流式阶段反馈：JDK 21 定向运行 `RagChatServiceTests`，4 个测试全部通过；前端 `npm run type-check`、`npm run build-only` 通过。
 
 ## 最新修复
 

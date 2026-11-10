@@ -104,9 +104,9 @@ WeKnora 是对照组，不是最终交付物。学习的是可迁移机制，而
 
 尚未形成 ADR 的选择都可以通过设计和实验调整，不视为不可改变的承诺。脚手架已锁定 Maven、Java 21、包名 `dev.pbrag`、Spring Boot 4.1.2 和 Spring AI 2.0.1。PostgreSQL 与 Redis 的连接地址写在 `backend/src/main/resources/application.yml`，由外部服务器提供。
 
-### 6.1 当前模型服务暂定基线
+### 6.1 当前模型服务基线
 
-为优先控制开发和评测成本，首期暂定使用阿里云百炼华北 2 地域：
+为优先控制开发和评测成本，首期已接入阿里云百炼华北 2 地域：
 
 - Chat/RAG：`qwen3.7-flash`；
 - Agent 初始模型：`qwen3.7-flash`；
@@ -116,7 +116,7 @@ WeKnora 是对照组，不是最终交付物。学习的是可迁移机制，而
 - Chat 与 Embedding 优先使用 OpenAI-compatible 接口；
 - Rerank 使用项目内独立适配器封装，不把供应商协议扩散到 Production RAG 编排层。
 
-这是一项可通过评测调整的当前基线，不是长期供应商锁定。实际接入前必须重新确认模型可用性、具体版本、价格、限流和数据处理条款，并确认 Embedding 输出维度；数据库向量列、模型配置和索引版本必须保持一致。评测和 Trace 应记录供应商、地域、模型 ID、具体模型版本及关键参数，避免仅记录可能自动升级的别名。
+这是一项可通过评测调整的当前基线，不是长期供应商锁定。Chat 与 Embedding 已通过百炼 OpenAI-compatible 接口接通，真实文档入库任务已完成；数据库向量列、模型配置和索引版本保持为 1024 维。评测和 Trace 应记录供应商、地域、模型 ID、具体模型版本及关键参数，避免仅记录可能自动升级的别名。
 
 ## 7. 当前架构与第一阶段设计
 
@@ -140,10 +140,13 @@ Controller
 ```text
 workspaces
   └─ knowledge_bases
-       └─ documents
-            └─ document_versions
-                 ├─ chunks
-                 └─ ingestion_jobs
+       ├─ documents
+       │    └─ document_versions
+       │         ├─ chunks
+       │         └─ ingestion_jobs
+       └─ chat_sessions
+            └─ chat_messages
+                 └─ message_citations
 ```
 
 - Workspace 只是知识资源分组，不是租户或授权边界；所有已登录用户目前都能访问；
@@ -174,6 +177,9 @@ GET  /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}
 POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/documents
 GET  /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/documents
 GET  /api/workspaces/{workspaceId}/ingestion-jobs/{jobId}
+POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/retrieval/search
+POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/rag/stream
+GET  /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/chat-sessions/{sessionId}
 POST /api/auth/register
 POST /api/auth/login
 POST /api/auth/logout
@@ -181,7 +187,7 @@ GET  /api/auth/me
 PUT  /api/auth/me
 ```
 
-API 统一返回 `ApiResponse<T>`，同时保留正确 HTTP 状态码。Markdown 与普通文本 PDF 上传流式计算 SHA-256，本地对象存储成功后在同一数据库事务中创建 Document、DocumentVersion 和 IngestionJob；数据库失败时补偿删除本次文件。同一知识库内相同内容返回已有版本与 Job，不生成重复数据；当前上传 API 每个新内容创建新 Document，未来通过显式重传 API 创建已有 Document 的新版本。Java `DocumentParser` 将原文件转换为带行号、页码、标题路径和字符偏移的结构块，PB-RAG 自己完成可复现分块、Chunk 落库、Embedding 和索引编排；复杂版面、OCR 和 Office 文档以后再通过同一接口接入外部解析器。文档列表返回每个 Document 的当前版本和对应入库 Job，查询始终同时约束 `workspace_id` 与 `knowledge_base_id`。
+普通 API 统一返回 `ApiResponse<T>`，流式 RAG 使用具名 SSE 事件，同时保留正确 HTTP 状态码。Markdown 与普通文本 PDF 上传流式计算 SHA-256，本地对象存储成功后在同一数据库事务中创建 Document、DocumentVersion 和 IngestionJob；数据库失败时补偿删除本次文件。同一知识库内相同内容返回已有版本与 Job，不生成重复数据；当前上传 API 每个新内容创建新 Document，未来通过显式重传 API 创建已有 Document 的新版本。Java `DocumentParser` 将原文件转换为带行号、页码、标题路径和字符偏移的结构块，PB-RAG 自己完成可复现分块、Chunk 落库、Embedding 和索引编排；复杂版面、OCR 和 Office 文档以后再通过同一接口接入外部解析器。文档列表返回每个 Document 的当前版本和对应入库 Job，查询始终同时约束 `workspace_id` 与 `knowledge_base_id`。基础检索只读取当前文档版本，通过 pgvector cosine distance 返回可追溯证据；RAG 在确定性检索后调用千问流式生成，引用事件绑定 Chunk、文档版本、稳定来源位置和受限原文摘录。会话、消息及引用按当前登录用户持久化，页面刷新后可恢复；模型上下文目前仍保持单轮，避免在评测前无界引入历史噪声。
 
 ### 7.5 日志与链路关联
 
@@ -220,6 +226,7 @@ API 统一返回 `ApiResponse<T>`，同时保留正确 HTTP 状态码。Markdown
 - `adr/0003-业务持久层采用-mybatis-plus.md`：Spring/MyBatis 分层及 SQL 边界；
 - `adr/0004-首期暂缓多租户与-rbac.md`：Workspace 语义，用户登录部分已被 ADR 0005 覆盖；
 - `adr/0005-增加账号认证但工作区继续共享.md`：账号认证与共享工作区的当前边界。
+- `adr/0006-基础-rag-采用领域检索与结构化-sse.md`：基础向量检索、版本级引用与流式事件协议。
 
 运行时 Prompt 规范独立保存在仓库根目录的 `prompts/README.md`。
 
