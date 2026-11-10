@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.DigestOutputStream;
@@ -15,18 +16,24 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+/**
+ * 本地文件系统对象存储实现。上传时流式计算 SHA-256，并通过临时文件原子移动到内容寻址路径。
+ */
 @Component
 public class LocalFileObjectStorage implements ObjectStorage {
 
 	private final Path root;
 
+	/** 将配置的存储根目录转换为绝对、规范化路径。 */
 	public LocalFileObjectStorage(@Value("${pbrag.storage.local.root:./data/objects}") String root) {
 		this.root = Path.of(root).toAbsolutePath().normalize();
 	}
 
+	/** 流式保存文件、限制最大字节数并同步计算内容摘要。 */
 	@Override
 	public StoredObject store(InputStream input, String originalFilename, long maximumBytes) throws IOException {
-		String suffix = originalFilename.toLowerCase().endsWith(".md") ? ".md" : ".bin";
+		String lowerName = originalFilename.toLowerCase();
+		String suffix = lowerName.endsWith(".md") ? ".md" : lowerName.endsWith(".pdf") ? ".pdf" : ".bin";
 		String date = LocalDate.now().toString();
 		String key = date + "/" + UUID.randomUUID() + suffix;
 		Path target = resolveKey(key);
@@ -44,7 +51,7 @@ public class LocalFileObjectStorage implements ObjectStorage {
 				}
 				output.write(buffer, 0, read);
 			}
-			Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+			moveIntoPlace(temporary, target);
 			return new StoredObject(key, HexFormat.of().formatHex(digest.digest()), total);
 		}
 		finally {
@@ -52,11 +59,29 @@ public class LocalFileObjectStorage implements ObjectStorage {
 		}
 	}
 
+	/** 优先使用原子移动；不支持该能力的文件系统退化为同目录普通移动。 */
+	private static void moveIntoPlace(Path temporary, Path target) throws IOException {
+		try {
+			Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+		}
+		catch (AtomicMoveNotSupportedException exception) {
+			Files.move(temporary, target);
+		}
+	}
+
+	/** 按存储键打开文件输入流，调用方负责关闭该流。 */
+	@Override
+	public InputStream open(String key) throws IOException {
+		return Files.newInputStream(resolveKey(key));
+	}
+
+	/** 删除指定存储对象；文件不存在时保持幂等。 */
 	@Override
 	public void delete(String key) throws IOException {
 		Files.deleteIfExists(resolveKey(key));
 	}
 
+	/** 解析并校验存储键，阻止路径穿越到存储根目录之外。 */
 	private Path resolveKey(String key) throws IOException {
 		Path resolved = root.resolve(key).normalize();
 		if (!resolved.startsWith(root)) {
@@ -65,6 +90,7 @@ public class LocalFileObjectStorage implements ObjectStorage {
 		return resolved;
 	}
 
+	/** 创建 SHA-256 摘要器；JVM 缺少标准算法时转换为非法状态。 */
 	private static MessageDigest sha256() {
 		try {
 			return MessageDigest.getInstance("SHA-256");

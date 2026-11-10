@@ -35,4 +35,71 @@
 		FROM ingestion_jobs
 		WHERE document_version_id = #{documentVersionId}
 	</select>
+
+	<select id="claimNext" resultMap="ingestionJobResultMap" affectData="true" flushCache="true">
+		UPDATE ingestion_jobs
+		SET status = 'RUNNING', stage = 'PARSING', attempt_count = attempt_count + 1,
+		    lease_owner = #{workerId},
+		    lease_expires_at = CURRENT_TIMESTAMP + (#{leaseSeconds} * INTERVAL '1 second'),
+		    error_code = NULL, error_message = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE id = (
+			SELECT id FROM ingestion_jobs
+			WHERE status = 'PENDING' AND available_at &lt;= CURRENT_TIMESTAMP
+			ORDER BY available_at, created_at, id
+			FOR UPDATE SKIP LOCKED
+			LIMIT 1
+		)
+		RETURNING <include refid="jobColumns"/>
+	</select>
+
+	<update id="advanceStage">
+		UPDATE ingestion_jobs
+		SET stage = #{nextStage},
+		    lease_expires_at = CURRENT_TIMESTAMP + (#{leaseSeconds} * INTERVAL '1 second'),
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = #{id} AND status = 'RUNNING' AND stage = #{expectedStage}
+		  AND lease_owner = #{workerId}
+	</update>
+
+	<update id="renewLease">
+		UPDATE ingestion_jobs
+		SET lease_expires_at = CURRENT_TIMESTAMP + (#{leaseSeconds} * INTERVAL '1 second'),
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = #{id} AND status = 'RUNNING' AND stage = #{stage}
+		  AND lease_owner = #{workerId}
+	</update>
+
+	<update id="complete">
+		UPDATE ingestion_jobs
+		SET status = 'COMPLETED', stage = 'COMPLETED', lease_owner = NULL,
+		    lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE id = #{id} AND status = 'RUNNING' AND stage = 'INDEXING'
+		  AND lease_owner = #{workerId}
+	</update>
+
+	<update id="failOrRetry">
+		UPDATE ingestion_jobs
+		SET status = CASE WHEN attempt_count &lt; max_attempts THEN 'RETRY_WAIT' ELSE 'FAILED' END,
+		    available_at = CURRENT_TIMESTAMP + (#{retryDelaySeconds} * INTERVAL '1 second'),
+		    lease_owner = NULL, lease_expires_at = NULL,
+		    error_code = #{errorCode}, error_message = #{errorMessage}, updated_at = CURRENT_TIMESTAMP
+		WHERE id = #{id} AND status = 'RUNNING' AND stage = #{expectedStage}
+		  AND lease_owner = #{workerId}
+	</update>
+
+	<update id="recoverExpired">
+		UPDATE ingestion_jobs
+		SET status = CASE WHEN attempt_count &lt; max_attempts THEN 'RETRY_WAIT' ELSE 'FAILED' END,
+		    available_at = CURRENT_TIMESTAMP + (#{retryDelaySeconds} * INTERVAL '1 second'),
+		    lease_owner = NULL, lease_expires_at = NULL,
+		    error_code = 'WORKER_LEASE_EXPIRED', error_message = 'Worker lease expired before completion',
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE status = 'RUNNING' AND lease_expires_at &lt; CURRENT_TIMESTAMP
+	</update>
+
+	<update id="makeRetriesAvailable">
+		UPDATE ingestion_jobs
+		SET status = 'PENDING', stage = 'PENDING', updated_at = CURRENT_TIMESTAMP
+		WHERE status = 'RETRY_WAIT' AND available_at &lt;= CURRENT_TIMESTAMP
+	</update>
 </mapper>

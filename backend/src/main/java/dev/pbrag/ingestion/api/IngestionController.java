@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+/** 文档上传和异步入库任务状态查询 API；上传只负责接收文件并快速返回任务。 */
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}")
 public class IngestionController {
@@ -25,11 +26,13 @@ public class IngestionController {
 	private final DocumentUploadService uploadService;
 	private final IngestionJobService jobService;
 
+	/** 注入上传编排与任务查询服务。 */
 	public IngestionController(DocumentUploadService uploadService, IngestionJobService jobService) {
 		this.uploadService = uploadService;
 		this.jobService = jobService;
 	}
 
+	/** 接收 Markdown/PDF 文件，保存原文件并快速返回异步入库任务。 */
 	@PostMapping("/knowledge-bases/{knowledgeBaseId}/documents")
 	public ResponseEntity<ApiResponse<UploadResponse>> upload(
 			@PathVariable UUID workspaceId,
@@ -45,6 +48,7 @@ public class IngestionController {
 				response);
 	}
 
+	/** 查询 Workspace 作用域内的单个入库任务最新状态。 */
 	@GetMapping("/ingestion-jobs/{jobId}")
 	public ResponseEntity<ApiResponse<JobResponse>> getJob(
 			@PathVariable UUID workspaceId,
@@ -55,6 +59,7 @@ public class IngestionController {
 	public record UploadResponse(
 			UUID documentId, UUID documentVersionId, UUID jobId,
 			String contentSha256, boolean duplicate, JobResponse job) {
+		/** 将上传服务结果转换为 HTTP 响应。 */
 		static UploadResponse from(DocumentUploadResult result) {
 			return new UploadResponse(
 					result.documentId(), result.documentVersionId(), result.job().id(),
@@ -67,6 +72,7 @@ public class IngestionController {
 			String status, String stage, int attemptCount, int maxAttempts,
 			String errorCode, String errorMessage,
 			OffsetDateTime availableAt, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+		/** 将任务领域对象转换为前端轮询使用的状态快照。 */
 		static JobResponse from(IngestionJob job) {
 			return new JobResponse(
 					job.id(), job.workspaceId(), job.documentVersionId(),

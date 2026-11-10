@@ -25,4 +25,10 @@
 		ORDER BY dv.created_at, dv.id
 		LIMIT 1
 	</select>
+
+	<update id="updateParserVersion">
+		UPDATE document_versions
+		SET parser_version = #{parserVersion}
+		WHERE workspace_id = #{workspaceId} AND id = #{id}
+	</update>
 </mapper>

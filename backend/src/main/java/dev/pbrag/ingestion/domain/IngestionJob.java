@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+/** 异步入库任务持久化对象，包含状态、阶段、重试次数、租约和结构化错误。 */
 @TableName("ingestion_jobs")
 public class IngestionJob {
 

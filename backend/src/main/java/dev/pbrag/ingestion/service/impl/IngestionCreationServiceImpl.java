@@ -16,6 +16,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 文档、不可变版本和入库任务的事务创建器。
+ * 通过知识库行锁串行化同一知识库内的内容摘要检查，保证并发重复上传仍然幂等。
+ */
 @Service
 public class IngestionCreationServiceImpl implements IngestionCreationService {
 	private static final Logger log = LoggerFactory.getLogger(IngestionCreationServiceImpl.class);
@@ -36,10 +40,11 @@ public class IngestionCreationServiceImpl implements IngestionCreationService {
 		this.jobMapper = jobMapper;
 	}
 
+	/** 新内容原子创建三类资源；重复内容返回已有版本与任务，不制造重复数据。 */
 	@Override
 	@Transactional
 	public IngestionCreationResult create(
-			UUID workspaceId, UUID knowledgeBaseId, String displayName,
+			UUID workspaceId, UUID knowledgeBaseId, String displayName, String mediaType,
 			String contentSha256, String storageKey) {
 		if (knowledgeBaseMapper.lockByWorkspaceIdAndId(workspaceId, knowledgeBaseId) == null) {
 			throw new ResourceNotFoundException("Knowledge base not found");
@@ -58,7 +63,7 @@ public class IngestionCreationServiceImpl implements IngestionCreationService {
 
 		UUID documentId = UUID.randomUUID();
 		UUID versionId = UUID.randomUUID();
-		Document document = new Document(documentId, workspaceId, knowledgeBaseId, displayName, "text/markdown");
+		Document document = new Document(documentId, workspaceId, knowledgeBaseId, displayName, mediaType);
 		DocumentVersion version = new DocumentVersion(
 				versionId, workspaceId, documentId, 1, contentSha256, storageKey);
 		IngestionJob job = new IngestionJob(UUID.randomUUID(), workspaceId, versionId);

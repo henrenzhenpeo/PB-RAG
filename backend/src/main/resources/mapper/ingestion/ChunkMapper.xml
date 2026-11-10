@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="dev.pbrag.ingestion.mapper.ChunkMapper">
+	<delete id="deleteByDocumentVersion">
+		DELETE FROM chunks
+		WHERE workspace_id = #{workspaceId} AND document_version_id = #{documentVersionId}
+	</delete>
+
+	<insert id="insert">
+		INSERT INTO chunks (
+			id, workspace_id, document_version_id, sequence_number, content,
+			start_offset, end_offset, source_position
+		) VALUES (
+			#{id}, #{workspaceId}, #{documentVersionId}, #{chunk.sequenceNumber}, #{chunk.content},
+			#{chunk.startOffset}, #{chunk.endOffset},
+			jsonb_build_object(
+				'startLine', CAST(#{chunk.startLine} AS integer),
+				'endLine', CAST(#{chunk.endLine} AS integer),
+				'startPage', CAST(#{chunk.startPage} AS integer),
+				'endPage', CAST(#{chunk.endPage} AS integer),
+				'headingPath', CAST(#{chunk.headingPath} AS text),
+				'chunkingVersion', CAST(#{chunkingVersion} AS text)
+			)
+		)
+	</insert>
+
+	<update id="updateEmbedding">
+		UPDATE chunks
+		SET embedding = CAST(#{embedding} AS vector)
+		WHERE workspace_id = #{workspaceId}
+		  AND document_version_id = #{documentVersionId}
+		  AND sequence_number = #{sequenceNumber}
+	</update>
+</mapper>
