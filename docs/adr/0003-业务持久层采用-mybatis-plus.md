@@ -21,6 +21,8 @@ MyBatis-Plus 已提供 Spring Boot 4 Starter，并正式支持 PostgreSQL。项�
 - Flyway 仍是唯一 DDL 与数据库版本管理机制；MyBatis-Plus 不负责建表；
 - 首期不启用 TenantLine；按照 ADR 0004，Workspace 不是租户边界，业务查询和数据库复合外键保留 Workspace 条件以防止资源错误关联；
 - 版本锁定为 MyBatis-Plus `3.5.18.1`，使用 `mybatis-plus-spring-boot4-starter`。
+- 业务代码禁止直接依赖 `JdbcTemplate`、`NamedParameterJdbcTemplate` 或 `java.sql`；仅 `platform.persistence` 中的 MyBatis TypeHandler 等底层适配代码可以使用 JDBC SPI；
+- 使用 ArchUnit 将持久层边界变成构建期约束：业务代码不得直连 JDBC、Controller 不得依赖 Mapper、Domain 不得反向依赖 API/Service/Mapper。
 
 ## 理由
 
@@ -39,3 +41,4 @@ MyBatis-Plus 减少普通 CRUD 的样板代码，符合项目发起人的 Java �
 - 资源 ID 与路径中的 Workspace 不匹配时返回不存在；
 - Flyway 在空库完成全部迁移；
 - 后续对向量、FTS 和任务领取 SQL执行真实 PostgreSQL 集成测试。
+- `PersistenceArchitectureTests` 在每次测试中验证持久层依赖边界，新增绕层代码时构建必须失败。
