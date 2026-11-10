@@ -19,6 +19,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 	private final WorkspaceService workspaceService;
 	private final KnowledgeBaseMapper knowledgeBaseMapper;
 
+	/** 注入父资源校验服务和知识库数据访问组件。 */
 	public KnowledgeBaseServiceImpl(
 			WorkspaceService workspaceService,
 			KnowledgeBaseMapper knowledgeBaseMapper) {
@@ -26,6 +27,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 		this.knowledgeBaseMapper = knowledgeBaseMapper;
 	}
 
+	/** 校验 Workspace 后创建知识库，并将唯一键冲突转换为业务异常。 */
 	@Override
 	@Transactional
 	public KnowledgeBase create(UUID workspaceId, String rawName, String rawDescription) {
@@ -44,6 +46,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 		}
 	}
 
+	/** 验证 Workspace 存在后列出其全部知识库。 */
 	@Override
 	@Transactional(readOnly = true)
 	public List<KnowledgeBase> list(UUID workspaceId) {
@@ -51,6 +54,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 		return knowledgeBaseMapper.selectAllByWorkspaceId(workspaceId);
 	}
 
+	/** 在 Workspace 作用域内查询知识库并统一处理不存在语义。 */
 	@Override
 	@Transactional(readOnly = true)
 	public KnowledgeBase require(UUID workspaceId, UUID knowledgeBaseId) {

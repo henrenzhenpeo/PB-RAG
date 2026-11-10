@@ -17,10 +17,12 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
 	private final WorkspaceMapper workspaceMapper;
 
+	/** 注入 Workspace 数据访问组件。 */
 	public WorkspaceServiceImpl(WorkspaceMapper workspaceMapper) {
 		this.workspaceMapper = workspaceMapper;
 	}
 
+	/** 校验并持久化 Workspace，名称冲突时转换为业务冲突异常。 */
 	@Override
 	@Transactional
 	public Workspace create(String rawName) {
@@ -34,12 +36,14 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 		}
 	}
 
+	/** 按稳定顺序读取全部 Workspace。 */
 	@Override
 	@Transactional(readOnly = true)
 	public List<Workspace> list() {
 		return workspaceMapper.selectAllOrdered();
 	}
 
+	/** 按 ID 查询 Workspace，并统一处理资源不存在语义。 */
 	@Override
 	@Transactional(readOnly = true)
 	public Workspace require(UUID workspaceId) {

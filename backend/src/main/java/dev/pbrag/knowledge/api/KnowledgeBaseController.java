@@ -18,16 +18,19 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** Workspace 作用域内的知识库创建、列表与详情 API。 */
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/knowledge-bases")
 public class KnowledgeBaseController {
 
 	private final KnowledgeBaseService service;
 
+	/** 注入知识库应用服务。 */
 	public KnowledgeBaseController(KnowledgeBaseService service) {
 		this.service = service;
 	}
 
+	/** 在指定 Workspace 下创建知识库并返回资源地址。 */
 	@PostMapping
 	public ResponseEntity<ApiResponse<KnowledgeBaseResponse>> create(
 			@PathVariable UUID workspaceId,
@@ -38,12 +41,14 @@ public class KnowledgeBaseController {
 				KnowledgeBaseResponse.from(knowledgeBase));
 	}
 
+	/** 查询指定 Workspace 下的全部知识库。 */
 	@GetMapping
 	public ResponseEntity<ApiResponse<List<KnowledgeBaseResponse>>> list(@PathVariable UUID workspaceId) {
 		return ApiResponses.ok(
 				service.list(workspaceId).stream().map(KnowledgeBaseResponse::from).toList());
 	}
 
+	/** 查询指定 Workspace 中的单个知识库。 */
 	@GetMapping("/{knowledgeBaseId}")
 	public ResponseEntity<ApiResponse<KnowledgeBaseResponse>> get(
 			@PathVariable UUID workspaceId,
@@ -58,6 +63,7 @@ public class KnowledgeBaseController {
 	}
 
 	public record KnowledgeBaseResponse(UUID id, UUID workspaceId, String name, String description) {
+		/** 将知识库领域对象转换为稳定的 API 响应。 */
 		static KnowledgeBaseResponse from(KnowledgeBase knowledgeBase) {
 			return new KnowledgeBaseResponse(
 					knowledgeBase.id(),

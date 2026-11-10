@@ -28,11 +28,13 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 	private static final Pattern WORKSPACE_PATH = Pattern.compile(
 			"^/api/workspaces/([0-9a-fA-F-]{36})(?:/.*)?$");
 
+	/** 跳过非 API 请求，避免静态资源和健康检查污染业务日志。 */
 	@Override
 	protected boolean shouldNotFilter(HttpServletRequest request) {
 		return !request.getRequestURI().startsWith("/api/");
 	}
 
+	/** 为请求建立 MDC 上下文并在完成后记录状态码、耗时和错误码。 */
 	@Override
 	protected void doFilterInternal(
 			HttpServletRequest request,
@@ -64,6 +66,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 		}
 	}
 
+	/** 复用合法的调用方请求 ID，否则生成新的追踪 ID。 */
 	private static String requestId(String candidate) {
 		if (candidate != null && SAFE_REQUEST_ID.matcher(candidate).matches()) {
 			return candidate;
@@ -71,6 +74,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 		return UUID.randomUUID().toString();
 	}
 
+	/** 从 API 路径提取 Workspace ID，供日志关联资源作用域。 */
 	private static String workspaceId(String path) {
 		Matcher matcher = WORKSPACE_PATH.matcher(path);
 		if (!matcher.matches()) {
@@ -84,15 +88,18 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 		}
 	}
 
+	/** 仅在值存在时写入 MDC，并返回可自动清理的句柄。 */
 	private static MDC.MDCCloseable putCloseable(String key, String value) {
 		return value == null ? null : MDC.putCloseable(key, value);
 	}
 
+	/** 将请求属性安全转换为字符串。 */
 	private static String stringAttribute(HttpServletRequest request, String name) {
 		Object value = request.getAttribute(name);
 		return value instanceof String text ? text : "-";
 	}
 
+	/** 根据响应状态和异常信息输出统一的请求完成日志。 */
 	private static void logCompletion(
 			HttpServletRequest request, int status, long durationMs, String errorCode) {
 		StringBuilder message = new StringBuilder("HTTP ")

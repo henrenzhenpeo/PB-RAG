@@ -9,5 +9,6 @@ import org.apache.ibatis.annotations.Mapper;
 @Mapper
 public interface WorkspaceMapper extends BaseMapper<Workspace> {
 
+	/** 按创建时间和 ID 的稳定顺序查询全部 Workspace。 */
 	List<Workspace> selectAllOrdered();
 }

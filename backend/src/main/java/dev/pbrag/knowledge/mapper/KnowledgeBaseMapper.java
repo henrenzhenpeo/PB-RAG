@@ -11,12 +11,15 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface KnowledgeBaseMapper extends BaseMapper<KnowledgeBase> {
 
+	/** 查询指定 Workspace 中的全部知识库。 */
 	List<KnowledgeBase> selectAllByWorkspaceId(@Param("workspaceId") UUID workspaceId);
 
+	/** 在 Workspace 作用域内按 ID 查询知识库。 */
 	KnowledgeBase selectByWorkspaceIdAndId(
 			@Param("workspaceId") UUID workspaceId,
 			@Param("id") UUID id);
 
+	/** 对知识库行加锁并验证其 Workspace 归属。 */
 	UUID lockByWorkspaceIdAndId(
 			@Param("workspaceId") UUID workspaceId,
 			@Param("id") UUID id);

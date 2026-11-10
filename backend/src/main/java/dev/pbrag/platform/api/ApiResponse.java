@@ -12,10 +12,12 @@ public record ApiResponse<T>(
 		ApiError error,
 		OffsetDateTime timestamp) {
 
+	/** 创建只包含成功数据的统一响应体。 */
 	public static <T> ApiResponse<T> success(T data) {
 		return new ApiResponse<>(true, data, null, OffsetDateTime.now(ZoneOffset.UTC));
 	}
 
+	/** 创建只包含结构化错误的统一响应体。 */
 	public static <T> ApiResponse<T> failure(ApiError error) {
 		return new ApiResponse<>(false, null, error, OffsetDateTime.now(ZoneOffset.UTC));
 	}

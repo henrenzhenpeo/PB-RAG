@@ -13,16 +13,19 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** 查询知识库文档及其当前版本、入库任务状态的 API。 */
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/documents")
 public class DocumentController {
 
 	private final DocumentQueryService service;
 
+	/** 注入文档查询应用服务。 */
 	public DocumentController(DocumentQueryService service) {
 		this.service = service;
 	}
 
+	/** 查询指定 Workspace 和知识库中的文档、当前版本及入库任务状态。 */
 	@GetMapping
 	public ResponseEntity<ApiResponse<List<DocumentResponse>>> list(
 			@PathVariable UUID workspaceId,
@@ -35,6 +38,7 @@ public class DocumentController {
 			UUID id, UUID workspaceId, UUID knowledgeBaseId, String displayName, String mediaType,
 			VersionResponse currentVersion, JobResponse ingestionJob,
 			OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+		/** 将持久层文档列表投影转换为对外响应。 */
 		static DocumentResponse from(DocumentListItem item) {
 			return new DocumentResponse(
 					item.getDocumentId(), item.getWorkspaceId(), item.getKnowledgeBaseId(),
@@ -53,6 +57,7 @@ public class DocumentController {
 			UUID id, String status, String stage, int attemptCount, int maxAttempts,
 			String errorCode, String errorMessage, OffsetDateTime availableAt,
 			OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+		/** 将文档关联的入库任务字段转换为响应；没有任务时返回 null。 */
 		static JobResponse from(DocumentListItem item) {
 			if (item.getJobId() == null) return null;
 			return new JobResponse(
