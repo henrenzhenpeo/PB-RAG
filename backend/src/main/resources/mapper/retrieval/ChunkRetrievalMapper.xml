@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="dev.pbrag.retrieval.mapper.ChunkRetrievalMapper">
+	<resultMap id="retrievalHitResultMap" type="dev.pbrag.retrieval.domain.RetrievalHit">
+		<constructor>
+			<arg column="chunk_id" javaType="java.util.UUID"/>
+			<arg column="document_id" javaType="java.util.UUID"/>
+			<arg column="document_version_id" javaType="java.util.UUID"/>
+			<arg column="document_name" javaType="java.lang.String"/>
+			<arg column="sequence_number" javaType="_int"/>
+			<arg column="content" javaType="java.lang.String"/>
+			<arg column="source_position" javaType="java.lang.String"/>
+			<arg column="similarity" javaType="_double"/>
+		</constructor>
+	</resultMap>
+
+	<select id="searchCurrentVersions" resultMap="retrievalHitResultMap">
+		SELECT
+			c.id AS chunk_id,
+			d.id AS document_id,
+			dv.id AS document_version_id,
+			d.display_name AS document_name,
+			c.sequence_number,
+			c.content,
+			CAST(c.source_position AS text) AS source_position,
+			1 - (c.embedding &lt;=&gt; CAST(#{queryEmbedding} AS vector)) AS similarity
+		FROM chunks c
+		JOIN document_versions dv
+		  ON dv.workspace_id = c.workspace_id AND dv.id = c.document_version_id
+		JOIN documents d
+		  ON d.workspace_id = dv.workspace_id AND d.id = dv.document_id
+		WHERE c.workspace_id = #{workspaceId}
+		  AND d.knowledge_base_id = #{knowledgeBaseId}
+		  AND d.current_version_id = dv.id
+		  AND c.embedding IS NOT NULL
+		  AND 1 - (c.embedding &lt;=&gt; CAST(#{queryEmbedding} AS vector)) &gt;= #{minimumSimilarity}
+		ORDER BY c.embedding &lt;=&gt; CAST(#{queryEmbedding} AS vector), c.id
+		LIMIT #{topK}
+	</select>
+</mapper>

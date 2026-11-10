@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="dev.pbrag.chat.mapper.ChatHistoryMapper">
+	<resultMap id="sessionResultMap" type="dev.pbrag.chat.domain.ChatSessionRecord">
+		<constructor>
+			<arg column="id" javaType="java.util.UUID"/>
+			<arg column="workspace_id" javaType="java.util.UUID"/>
+			<arg column="knowledge_base_id" javaType="java.util.UUID"/>
+			<arg column="user_id" javaType="java.util.UUID"/>
+			<arg column="title" javaType="java.lang.String"/>
+			<arg column="created_at" javaType="java.time.OffsetDateTime"/>
+			<arg column="updated_at" javaType="java.time.OffsetDateTime"/>
+		</constructor>
+	</resultMap>
+
+	<resultMap id="messageResultMap" type="dev.pbrag.chat.domain.ChatMessageRecord">
+		<constructor>
+			<arg column="id" javaType="java.util.UUID"/>
+			<arg column="turn_id" javaType="java.util.UUID"/>
+			<arg column="role" javaType="java.lang.String"/>
+			<arg column="status" javaType="java.lang.String"/>
+			<arg column="content" javaType="java.lang.String"/>
+			<arg column="error_code" javaType="java.lang.String"/>
+			<arg column="created_at" javaType="java.time.OffsetDateTime"/>
+		</constructor>
+	</resultMap>
+
+	<resultMap id="citationResultMap" type="dev.pbrag.chat.domain.RagCitation">
+		<constructor>
+			<arg column="ordinal" javaType="_int"/>
+			<arg column="chunk_id" javaType="java.util.UUID"/>
+			<arg column="document_id" javaType="java.util.UUID"/>
+			<arg column="document_version_id" javaType="java.util.UUID"/>
+			<arg column="document_name" javaType="java.lang.String"/>
+			<arg column="sequence_number" javaType="_int"/>
+			<arg column="source_position" javaType="java.lang.String"/>
+			<arg column="excerpt" javaType="java.lang.String"/>
+			<arg column="similarity" javaType="_double"/>
+		</constructor>
+	</resultMap>
+
+	<insert id="insertSession">
+		INSERT INTO chat_sessions (id, workspace_id, knowledge_base_id, user_id, title)
+		VALUES (#{id}, #{workspaceId}, #{knowledgeBaseId}, #{userId}, #{title})
+	</insert>
+
+	<select id="selectSession" resultMap="sessionResultMap">
+		SELECT id, workspace_id, knowledge_base_id, user_id, title, created_at, updated_at
+		FROM chat_sessions
+		WHERE id = #{id}
+		  AND workspace_id = #{workspaceId}
+		  AND knowledge_base_id = #{knowledgeBaseId}
+		  AND user_id = #{userId}
+	</select>
+
+	<insert id="insertMessage">
+		INSERT INTO chat_messages (
+			id, workspace_id, session_id, turn_id, role, status, content
+		) VALUES (
+			#{id}, #{workspaceId}, #{sessionId}, #{turnId}, #{role}, #{status}, #{content}
+		)
+	</insert>
+
+	<insert id="insertCitation">
+		INSERT INTO message_citations (
+			id, workspace_id, message_id, ordinal, chunk_id, document_id,
+			document_version_id, document_name, sequence_number, source_position,
+			excerpt, similarity
+		) VALUES (
+			#{id}, #{workspaceId}, #{messageId}, #{citation.index}, #{citation.chunkId},
+			#{citation.documentId}, #{citation.documentVersionId}, #{citation.documentName},
+			#{citation.sequenceNumber}, CAST(#{citation.sourcePosition} AS jsonb),
+			#{citation.excerpt}, #{citation.similarity}
+		)
+	</insert>
+
+	<update id="finishAssistant">
+		UPDATE chat_messages
+		SET status = #{status}, content = #{content}, error_code = #{errorCode},
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{messageId}
+		  AND role = 'ASSISTANT' AND status = 'STREAMING'
+	</update>
+
+	<update id="touchSession">
+		UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{sessionId}
+	</update>
+
+	<update id="interruptStaleStreaming">
+		UPDATE chat_messages
+		SET status = 'INTERRUPTED', error_code = 'SERVER_RESTARTED',
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND session_id = #{sessionId}
+		  AND role = 'ASSISTANT' AND status = 'STREAMING'
+		  AND updated_at &lt; CURRENT_TIMESTAMP - INTERVAL '30 minutes'
+	</update>
+
+	<select id="selectMessages" resultMap="messageResultMap">
+		SELECT id, turn_id, role, status, content, error_code, created_at
+		FROM chat_messages
+		WHERE workspace_id = #{workspaceId} AND session_id = #{sessionId}
+		ORDER BY created_at, id
+	</select>
+
+	<select id="selectCitations" resultMap="citationResultMap">
+		SELECT ordinal, chunk_id, document_id, document_version_id, document_name,
+		       sequence_number, CAST(source_position AS text) AS source_position,
+		       excerpt, similarity
+		FROM message_citations
+		WHERE workspace_id = #{workspaceId} AND message_id = #{messageId}
+		ORDER BY ordinal
+	</select>
+</mapper>

@@ -14,12 +14,24 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 /** 将领域和协议异常转换为统一错误信封，不向客户端暴露数据库及调用栈信息。 */
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
 	private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+	/**
+	 * SSE 客户端停止、切换页面或关闭连接后，Servlet 容器可能在下一次写入时报告连接不可用。
+	 * 此时响应通常已经提交，不能再写统一 JSON 错误信封，否则会产生二次转换异常。
+	 */
+	@ExceptionHandler(AsyncRequestNotUsableException.class)
+	void handleDisconnectedClient(AsyncRequestNotUsableException exception, HttpServletRequest request) {
+		markError(request, "CLIENT_DISCONNECTED");
+		log.debug("Client disconnected while an asynchronous response was being written: {}",
+				exception.getMessage());
+	}
 
 	@ExceptionHandler(ResourceNotFoundException.class)
 	ResponseEntity<ApiResponse<Void>> handleNotFound(

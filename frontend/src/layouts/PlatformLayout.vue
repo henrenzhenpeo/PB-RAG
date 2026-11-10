@@ -60,6 +60,7 @@ async function signOut() { await logout(); void router.replace('/sign-in') }
       <nav class="nav">
         <span class="nav-caption">工作台</span>
         <router-link :to="`/workspaces/${workspaceId}/knowledge-bases`" class="nav-main"><span class="nav-icon">▦</span><span>知识库</span><span class="nav-count">{{ knowledgeBases.length }}</span></router-link>
+        <router-link :to="`/workspaces/${workspaceId}/chat`" class="nav-main"><span class="nav-icon">◇</span><span>知识问答</span></router-link>
         <div class="nav-sub">
           <router-link v-for="item in knowledgeBases" :key="item.id" :to="`/workspaces/${workspaceId}/knowledge-bases/${item.id}`" :class="{ selected: activeKbId === item.id }" :title="item.name"><span class="nav-dot"></span><span class="nav-name">{{ item.name }}</span></router-link>
           <span v-if="!knowledgeBases.length" class="nav-hint">暂无知识库</span>

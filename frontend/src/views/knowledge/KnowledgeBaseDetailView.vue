@@ -119,7 +119,9 @@ onBeforeUnmount(stopPolling)
       <template v-if="knowledgeBase">
         <header>
           <div><span class="eyebrow">KNOWLEDGE BASE</span><h1>{{ knowledgeBase.name }}</h1><p>{{ knowledgeBase.description || '管理文档与入库状态' }}</p></div>
-          <t-button theme="primary" :loading="uploading" @click="selectFile">上传文档</t-button>
+          <div class="header-actions">
+            <t-button theme="primary" :loading="uploading" @click="selectFile">上传文档</t-button>
+          </div>
         </header>
 
         <div class="summary">
@@ -172,6 +174,8 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .eyebrow { color: var(--td-brand-color); font-size: 11px; font-weight: 700; letter-spacing: .12em; }
 header h1 { margin: 8px 0; font-size: 30px; }
 header p { margin: 0; color: var(--td-text-color-secondary); }
+.header-actions { display: flex; gap: 10px; }
+.header-actions a { text-decoration: none; }
 .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
 .summary div { display: grid; gap: 8px; padding: 20px 24px; background: #fff; border: 1px solid var(--td-component-border); border-radius: 12px; }
 .summary span { color: var(--td-text-color-secondary); font-size: 13px; }

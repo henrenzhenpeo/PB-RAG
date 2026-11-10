@@ -155,6 +155,16 @@
 	</dependencyManagement>
 
 	<build>
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+			</resource>
+			<!-- 运行时 Prompt 在仓库根目录统一版本管理，构建时复制到 classpath。 -->
+			<resource>
+				<directory>../prompts</directory>
+				<targetPath>prompts</targetPath>
+			</resource>
+		</resources>
 		<plugins>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
