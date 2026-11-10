@@ -1,5 +1,6 @@
 import { http, type ApiResponse } from './http'
 
+// status 表示任务生命周期，stage 表示入库流水线的具体处理位置。
 export type IngestionStatus = 'PENDING' | 'RUNNING' | 'RETRY_WAIT' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
 export type IngestionStage = 'PENDING' | 'PARSING' | 'CHUNKING' | 'EMBEDDING' | 'INDEXING' | 'COMPLETED'
 
@@ -54,7 +55,8 @@ export async function listDocuments(
   return response.data.data ?? []
 }
 
-export async function uploadMarkdown(
+/** 使用 multipart 上传原文件；后端快速返回任务，页面随后通过 Job API 轮询进度。 */
+export async function uploadDocument(
   workspaceId: string,
   knowledgeBaseId: string,
   file: File,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// 当前账号资料页：加载本人信息并只允许修改显示名称。
 import { onMounted, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { currentUser, updateProfile, type User } from '@/api/auth'

@@ -1,5 +1,6 @@
 import { http, type ApiResponse } from './http'
 
+// Workspace 作用域内的知识库读写 API 与传输类型。
 export interface KnowledgeBase {
   id: string
   workspaceId: string

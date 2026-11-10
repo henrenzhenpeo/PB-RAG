@@ -1,4 +1,6 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+// 根组件只承载路由出口，业务状态由布局、页面和 Pinia Store 管理。
+</script>
 
 <template>
   <router-view />

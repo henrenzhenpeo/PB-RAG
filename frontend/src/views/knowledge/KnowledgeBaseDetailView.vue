@@ -1,10 +1,12 @@
 <script setup lang="ts">
+// 知识库详情页：上传文档、展示版本与任务状态，并轮询仍在运行的入库任务。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { getKnowledgeBase, type KnowledgeBase } from '@/api/knowledgeBases'
 import { errorMessage } from '@/api/http'
-import { getIngestionJob, listDocuments, uploadMarkdown, type IngestionJob, type IngestionStage, type KnowledgeDocument } from '@/api/ingestion'
+import { getIngestionJob, listDocuments, uploadDocument, type IngestionJob, type IngestionStage, type KnowledgeDocument } from '@/api/ingestion'
+import { formatDateTime } from '@/utils/dateTime'
 
 const route = useRoute()
 const workspaceId = computed(() => String(route.params.workspaceId ?? ''))
@@ -56,7 +58,7 @@ async function handleFile(event: Event) {
   if (!file) return
   uploading.value = true
   try {
-    const result = await uploadMarkdown(workspaceId.value, kbId.value, file)
+    const result = await uploadDocument(workspaceId.value, kbId.value, file)
     documents.value = await listDocuments(workspaceId.value, kbId.value)
     void MessagePlugin.success(result.duplicate ? '文件内容已存在，已返回原任务' : '上传成功，已创建入库任务')
     ensurePolling()
@@ -76,10 +78,7 @@ function stageProgress(job: IngestionJob) {
   return Math.max(0, Math.round((index / (stageOrder.length - 1)) * 100))
 }
 
-function displayTime(value: string) {
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
-
+// 只轮询非终态任务；每轮合并最新快照，全部结束后自动停止定时器。
 async function pollJobs() {
   const active = documents.value.filter((document) => document.ingestionJob && !isTerminal(document.ingestionJob))
   if (!active.length) {
@@ -120,7 +119,7 @@ onBeforeUnmount(stopPolling)
       <template v-if="knowledgeBase">
         <header>
           <div><span class="eyebrow">KNOWLEDGE BASE</span><h1>{{ knowledgeBase.name }}</h1><p>{{ knowledgeBase.description || '管理文档与入库状态' }}</p></div>
-          <t-button theme="primary" :loading="uploading" @click="selectFile">上传 Markdown</t-button>
+          <t-button theme="primary" :loading="uploading" @click="selectFile">上传文档</t-button>
         </header>
 
         <div class="summary">
@@ -131,14 +130,14 @@ onBeforeUnmount(stopPolling)
 
         <t-card class="document-card">
           <div class="section-heading"><div><h2>文档</h2><p>查看当前版本与入库进度</p></div><t-input v-model="search" class="search" placeholder="搜索文档名称" clearable /></div>
-            <input ref="fileInput" class="file-input" type="file" accept=".md,text/markdown,text/plain" @change="handleFile" />
+            <input ref="fileInput" class="file-input" type="file" accept=".md,.pdf,text/markdown,text/plain,application/pdf" @change="handleFile" />
 
           <div v-if="filteredDocuments.length" class="documents">
             <article v-for="document in filteredDocuments" :key="document.id" class="document">
               <div class="document-heading">
                 <div>
                   <strong>{{ document.displayName }}</strong>
-                  <p>版本 v{{ document.currentVersion.versionNumber }} · 上传于 {{ displayTime(document.createdAt) }}</p>
+                  <p>版本 v{{ document.currentVersion.versionNumber }} · 上传于 {{ formatDateTime(document.createdAt) }}</p>
                 </div>
                 <t-tag v-if="document.ingestionJob" :theme="document.ingestionJob.status === 'FAILED' ? 'danger' : document.ingestionJob.status === 'COMPLETED' ? 'success' : 'primary'" variant="light">
                   {{ document.ingestionJob.status }}
@@ -157,7 +156,7 @@ onBeforeUnmount(stopPolling)
               <details class="metadata"><summary>查看文档标识</summary><code>SHA-256 {{ document.currentVersion.contentSha256 }}</code><code>Document {{ document.id }}</code></details>
             </article>
           </div>
-          <t-empty v-else :description="search ? '没有匹配的文档' : '尚未上传 Markdown 文档'" />
+          <t-empty v-else :description="search ? '没有匹配的文档' : '尚未上传 Markdown 或 PDF 文档'" />
         </t-card>
       </template>
       <t-empty v-else-if="!loading" description="知识库不存在或暂时无法加载" />

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// 登录/注册合并表单：客户端即时校验仅改善交互，最终规则仍由后端确定性校验。
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { currentUser, login, register } from '@/api/auth'

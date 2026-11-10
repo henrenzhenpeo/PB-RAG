@@ -1,5 +1,6 @@
 import { http, type ApiResponse } from './http'
 
+// Workspace API 适配层；组件不直接处理后端 ApiResponse 包装结构。
 export interface Workspace {
   id: string
   name: string

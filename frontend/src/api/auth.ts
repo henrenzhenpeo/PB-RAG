@@ -1,5 +1,6 @@
 import { http, type ApiResponse } from './http'
 
+// 当前登录用户的最小公开资料，不包含密码散列或会话令牌。
 export interface User { id: string; email: string; displayName: string }
 
 export async function currentUser(): Promise<User> {

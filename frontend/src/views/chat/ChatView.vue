@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// 对话详情页占位骨架：绑定路由 chatId，为后续 SSE 回答与引用展示保留入口。
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+// 路由按演示主路径组织：账号入口、Workspace 布局及知识库/对话/运行/评测页面。
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [

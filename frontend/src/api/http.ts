@@ -1,5 +1,6 @@
 import axios from 'axios'
 
+// 统一 HTTP 客户端；自定义请求头配合后端过滤器阻止普通跨站表单写请求。
 export const http = axios.create({
   baseURL: '/api',
   timeout: 15_000,
@@ -32,6 +33,7 @@ export interface ApiResponse<T> {
   timestamp: string
 }
 
+/** 将 Axios、后端统一错误结构和普通异常收敛为可直接展示的用户消息。 */
 export function errorMessage(error: unknown): string {
   if (axios.isAxiosError<ApiResponse<unknown>>(error)) {
     const apiError = error.response?.data?.error

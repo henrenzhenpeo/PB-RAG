@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// 登录后的平台布局：同步账号、Workspace 和知识库导航，并承载子路由页面。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { listKnowledgeBases, type KnowledgeBase } from '@/api/knowledgeBases'
@@ -14,6 +15,7 @@ const workspace = useWorkspaceStore()
 const workspaceId = computed(() => String(route.params.workspaceId ?? ''))
 const knowledgeBases = ref<KnowledgeBase[]>([])
 const activeKbId = computed(() => String(route.params.kbId ?? ''))
+const userInitial = computed(() => (user.value?.displayName || user.value?.email || 'U').trim().charAt(0).toUpperCase())
 
 async function loadNavigation(id: string) {
   if (!id) return
@@ -65,7 +67,20 @@ async function signOut() { await logout(); void router.replace('/sign-in') }
         <span class="nav-caption second">分析</span>
         <router-link :to="`/workspaces/${workspaceId}/evaluations`" class="nav-main"><span class="nav-icon">◫</span><span>评测</span></router-link>
       </nav>
-      <div class="sidebar-bottom"><span class="bottom-label">当前工作区 · 所有账号共享</span><strong :title="workspace.workspaceName ?? workspaceId">{{ workspace.workspaceName ?? 'Workspace' }}</strong><router-link to="/login">切换工作区 ↗</router-link></div>
+      <div class="sidebar-bottom">
+        <span class="bottom-label">当前工作区 · 所有账号共享</span>
+        <strong class="workspace-name" :title="workspace.workspaceName ?? workspaceId">{{ workspace.workspaceName ?? 'Workspace' }}</strong>
+        <router-link to="/login" class="all-workspaces">所有工作区 <span>↗</span></router-link>
+        <div class="account-divider"></div>
+        <div class="account-row">
+          <span class="account-avatar" aria-hidden="true">{{ userInitial }}</span>
+          <div class="account-info">
+            <router-link to="/profile" class="account-name" :title="user?.displayName ?? user?.email ?? '个人资料'">{{ user?.displayName ?? '个人资料' }}</router-link>
+            <span>{{ user?.email ?? '账号设置' }}</span>
+          </div>
+          <button class="logout-button" type="button" title="退出登录" @click="signOut">退出</button>
+        </div>
+      </div>
     </t-aside>
     <t-layout>
       <t-header class="header">
@@ -73,7 +88,6 @@ async function signOut() { await logout(); void router.replace('/sign-in') }
           <strong>{{ workspace.workspaceName ?? 'Workspace' }}</strong>
           <span class="workspace-id">知识资源工作区</span>
         </div>
-        <div class="header-actions"><router-link to="/login">所有工作区</router-link><router-link to="/profile">{{ user?.displayName ?? '个人资料' }}</router-link><button @click="signOut">退出</button></div>
       </t-header>
       <t-content class="content">
         <router-view />
@@ -100,8 +114,6 @@ async function signOut() { await logout(); void router.replace('/sign-in') }
 
 .header > div { display: flex; flex-direction: column; gap: 2px; }
 .workspace-id { font-size: 12px; color: var(--td-text-color-placeholder); }
-.header a { color: var(--td-brand-color); text-decoration: none; }
-.header-actions { display: flex; align-items: center; gap: 20px; font-size: 13px; }.header-actions button { border: 0; background: none; color: #718096; cursor: pointer; }
 
 .nav { display: flex; flex-direction: column; gap: 4px; padding: 26px 12px; }
 .nav-caption { padding: 4px 12px 8px; color: var(--td-text-color-placeholder); font-size: 12px; font-weight: 600; }
@@ -125,13 +137,30 @@ async function signOut() { await logout(); void router.replace('/sign-in') }
 .nav-sub a.selected .nav-dot { background: var(--td-brand-color); }
 
 .nav a.router-link-exact-active { color: var(--td-brand-color); background: var(--td-brand-color-light); }
-.sidebar-bottom { display: grid; gap: 6px; margin: auto 12px 18px; padding: 16px; border-radius: 12px; background: #f4f7fd; }.bottom-label { color: #8c9ab0; font-size: 11px; }.sidebar-bottom strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }.sidebar-bottom a { color: #3159db; text-decoration: none; font-size: 12px; }
+.sidebar-bottom { display: grid; gap: 6px; margin: auto 12px 18px; padding: 15px; border: 1px solid #e8edf7; border-radius: 12px; background: #f5f7fd; }
+.bottom-label { color: #8c9ab0; font-size: 10px; }
+.workspace-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.sidebar-bottom a { color: #3159db; text-decoration: none; font-size: 11px; }
+.all-workspaces { display: flex; align-items: center; justify-content: space-between; }
+.account-divider { height: 1px; margin: 8px 0; background: #e1e7f2; }
+.account-row { display: flex; align-items: center; min-width: 0; gap: 9px; }
+.account-avatar { display: grid; flex: 0 0 30px; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: #3159db; color: #fff; font-size: 12px; font-weight: 700; }
+.account-info { display: grid; min-width: 0; gap: 2px; }
+.account-info .account-name { overflow: hidden; color: #26354e; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.account-info > span { overflow: hidden; color: #94a0b1; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.logout-button { margin-left: auto; padding: 4px 0 4px 6px; border: 0; background: none; color: #718096; cursor: pointer; font-size: 10px; }
+.logout-button:hover { color: #d54941; }
 
 .content { padding: 32px; min-width: 0; }
 @media (max-width: 760px) {
   .platform { display: block; }
   .sidebar { width: 100% !important; border-right: 0; border-bottom: 1px solid var(--td-component-border); }
-  .sidebar-brand { height: 58px; }.sidebar-bottom { display: none; }
+  .sidebar-brand { height: 58px; }
+  .sidebar-bottom { grid-template-columns: minmax(0, 1fr) auto; margin: 0 14px 12px; padding: 12px 14px; }
+  .bottom-label, .workspace-name, .all-workspaces { grid-column: 1; }
+  .account-divider { display: none; }
+  .account-row { grid-column: 2; grid-row: 1 / span 3; }
+  .account-info > span { display: none; }
   .nav { padding: 10px 14px; }
   .nav-sub { display: flex; overflow-x: auto; padding-left: 0; }
   .nav-sub a { flex: none; max-width: 180px; }

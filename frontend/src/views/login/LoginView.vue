@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// 登录后的 Workspace 选择页，同时提供共享 Workspace 的创建入口。
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'

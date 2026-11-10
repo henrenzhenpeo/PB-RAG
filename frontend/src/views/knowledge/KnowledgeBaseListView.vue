@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// 当前 Workspace 的知识库列表页，负责加载与创建知识库。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'

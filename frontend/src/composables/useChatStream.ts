@@ -2,6 +2,7 @@ import { onScopeDispose, ref } from 'vue'
 import { openEventStream } from '@/api/sse'
 import { useStreamStore } from '@/stores/stream'
 
+/** 管理一次对话流的消息累积、错误状态与作用域销毁时的主动取消。 */
 export function useChatStream(streamId: string) {
   const stream = useStreamStore()
   const messages = ref<string[]>([])

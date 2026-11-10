@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Agent 运行详情占位页：从路由解析 runId，后续承载步骤、工具调用与取消事件。
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
