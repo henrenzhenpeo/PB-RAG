@@ -150,7 +150,7 @@ workspaces
 - 业务 ID 使用 UUID，由应用生成；
 - 文档版本、Chunk 和引用绑定稳定的版本及来源位置；
 - `workspace_id` 与复合外键用于资源归属和防止错误关联；
-- `chunks.embedding` 使用 `vector(1536)`；
+- `chunks.embedding` 经 V5 迁移使用 `vector(1024)`，与百炼 `qwen3.7-text-embedding-flash` 官方默认输出维度一致；实际账号接口调用仍需在配置密钥后回测；
 - PostgreSQL Job 表是任务事实来源，Redis 只负责唤醒、取消标记和限流。
 
 ### 7.3 入库状态机
@@ -161,7 +161,7 @@ PENDING → PARSING → CHUNKING → EMBEDDING → INDEXING → COMPLETED
 PENDING/处理中/RETRY_WAIT → FAILED 或 CANCELLED
 ```
 
-状态转换由领域代码控制，禁止跳过处理阶段；任务必须支持幂等、明确失败原因、有限重试和崩溃恢复。
+状态转换由领域代码控制，禁止跳过处理阶段；任务必须支持幂等、明确失败原因、有限重试和崩溃恢复。任务领取结果以及 Worker 的阶段推进、完成、失败和重试在执行 Mapper 条件更新前均通过 `IngestionJobState` 校验；Mapper 继续负责用期望阶段与租约所有者保证数据库原子性。
 
 ### 7.4 当前 API
 
@@ -181,7 +181,7 @@ GET  /api/auth/me
 PUT  /api/auth/me
 ```
 
-API 统一返回 `ApiResponse<T>`，同时保留正确 HTTP 状态码。Markdown 上传流式计算 SHA-256，本地对象存储成功后在同一数据库事务中创建 Document、DocumentVersion 和 IngestionJob；数据库失败时补偿删除本次文件。同一知识库内相同内容返回已有版本与 Job，不生成重复数据；当前上传 API 每个新内容创建新 Document，未来通过显式重传 API 创建已有 Document 的新版本。文档列表返回每个 Document 的当前版本和对应入库 Job，查询始终同时约束 `workspace_id` 与 `knowledge_base_id`。
+API 统一返回 `ApiResponse<T>`，同时保留正确 HTTP 状态码。Markdown 与普通文本 PDF 上传流式计算 SHA-256，本地对象存储成功后在同一数据库事务中创建 Document、DocumentVersion 和 IngestionJob；数据库失败时补偿删除本次文件。同一知识库内相同内容返回已有版本与 Job，不生成重复数据；当前上传 API 每个新内容创建新 Document，未来通过显式重传 API 创建已有 Document 的新版本。Java `DocumentParser` 将原文件转换为带行号、页码、标题路径和字符偏移的结构块，PB-RAG 自己完成可复现分块、Chunk 落库、Embedding 和索引编排；复杂版面、OCR 和 Office 文档以后再通过同一接口接入外部解析器。文档列表返回每个 Document 的当前版本和对应入库 Job，查询始终同时约束 `workspace_id` 与 `knowledge_base_id`。
 
 ### 7.5 日志与链路关联
 
@@ -192,6 +192,13 @@ API 统一返回 `ApiResponse<T>`，同时保留正确 HTTP 状态码。Markdown
 - MyBatis SQL 日志仅在 `local` Profile 开启，默认环境不打印 SQL 参数；
 - 禁止在访问日志中记录请求体、响应正文、文件内容、Authorization、Cookie、密钥、数据库密码和 RAG 原文。
 
+### 7.6 日期时间规范
+
+- PostgreSQL 使用 `TIMESTAMPTZ` 保存绝对时间，不将日期时间持久化为格式化字符串；
+- 后端 API 使用带时区的 ISO 8601 字符串，禁止输出数字时间戳；
+- 前端面向用户统一按 `Asia/Shanghai` 展示为 `yyyy-MM-dd HH:mm:ss`；
+- 日志保留毫秒和时区，满足跨请求故障定位与 Trace 对齐需要。
+
 ## 8. 项目质量原则
 
 - 减少功能宽度，不牺牲工程深度；
@@ -201,6 +208,8 @@ API 统一返回 `ApiResponse<T>`，同时保留正确 HTTP 状态码。Markdown
 - 正常路径和失败路径属于同一个功能；
 - 所有改进结论必须可复现；
 - UI 以支持调试、理解和演示为目标，不优先追求视觉丰富度。
+- 业务数据库访问统一通过 MyBatis-Plus Mapper；禁止 Service 或 Controller 使用 `JdbcTemplate` 或直接调用 JDBC，架构测试负责阻止边界回退；
+- 简单代码使用类级或方法级短注释说明功能；核心流程重点注释设计原因、事务边界、安全约束、失败语义和不直观算法，不使用逐行翻译代码的噪声注释。
 
 ## 9. 文档结构
 
