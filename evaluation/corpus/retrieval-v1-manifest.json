@@ -1,0 +1,46 @@
+{
+  "id": "retrieval-v1",
+  "status": "frozen",
+  "knowledgeBaseId": "87703255-b339-4a25-936e-7af56f50d27a",
+  "createdAt": "2026-11-11T11:43:00+08:00",
+  "source": "PostgreSQL chunk export _SELECT_d_display_name_dv_id_AS_document_version_id_c_id_AS_chun_202611111143.csv",
+  "totalChunks": 377,
+  "documents": [
+    {
+      "displayName": "RAG-功能验证说明.md",
+      "documentVersionId": "f3041b80-b798-443c-954e-d4954cca4872",
+      "mediaType": "text/markdown",
+      "versionNumber": 1,
+      "parserVersion": "commonmark-0.22-heading-v1",
+      "chunkCount": 16,
+      "embeddedChunkCount": 16
+    },
+    {
+      "displayName": "WPS_PRD_outline_interfaces.md",
+      "documentVersionId": "5b5b4a74-d883-4a21-af5f-9aecb61e001d",
+      "mediaType": "text/markdown",
+      "versionNumber": 1,
+      "parserVersion": "commonmark-0.22-heading-v1",
+      "chunkCount": 300,
+      "embeddedChunkCount": 300
+    },
+    {
+      "displayName": "知识管理系统PRD.md",
+      "documentVersionId": "4f850570-8f64-48a9-b1b1-4321984149a6",
+      "mediaType": "text/markdown",
+      "versionNumber": 1,
+      "parserVersion": "commonmark-0.22-heading-v1",
+      "chunkCount": 57,
+      "embeddedChunkCount": 57
+    },
+    {
+      "displayName": "陈波AI应用开发.pdf",
+      "documentVersionId": "10650829-95c3-4142-be8f-889491e2f9e5",
+      "mediaType": "application/pdf",
+      "versionNumber": 1,
+      "parserVersion": "pdfbox-3-page-v1",
+      "chunkCount": 4,
+      "embeddedChunkCount": 4
+    }
+  ]
+}
