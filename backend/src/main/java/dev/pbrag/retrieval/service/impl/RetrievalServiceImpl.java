@@ -6,8 +6,11 @@ import dev.pbrag.retrieval.domain.RetrievalHit;
 import dev.pbrag.retrieval.domain.RetrievalPipelineResult;
 import dev.pbrag.retrieval.domain.RetrievalStage;
 import dev.pbrag.retrieval.domain.RetrievalStageResult;
+import dev.pbrag.retrieval.domain.RetrievalStageStatus;
+import dev.pbrag.retrieval.domain.RetrievalStageSummary;
 import dev.pbrag.retrieval.mapper.ChunkRetrievalMapper;
 import dev.pbrag.retrieval.rerank.RerankClient;
+import dev.pbrag.retrieval.rerank.RerankProtocolException;
 import dev.pbrag.retrieval.rerank.RerankTransientException;
 import dev.pbrag.retrieval.service.RetrievalRunService;
 import dev.pbrag.retrieval.service.RetrievalService;
@@ -43,6 +46,8 @@ public class RetrievalServiceImpl implements RetrievalService {
 	private final int finalTopK;
 	private final int rrfConstant;
 	private final double minimumVectorSimilarity;
+	private final double minimumBm25Score;
+	private final int maximumContextCharacters;
 
 	public RetrievalServiceImpl(KnowledgeBaseService knowledgeBaseService,
 			ChunkRetrievalMapper mapper, RetrievalRunService runService,
@@ -54,7 +59,9 @@ public class RetrievalServiceImpl implements RetrievalService {
 			@Value("${pbrag.retrieval.rerank-top-k:10}") int rerankTopK,
 			@Value("${pbrag.retrieval.top-k:6}") int finalTopK,
 			@Value("${pbrag.retrieval.rrf-constant:60}") int rrfConstant,
-			@Value("${pbrag.retrieval.minimum-similarity:0.2}") double minimumVectorSimilarity) {
+			@Value("${pbrag.retrieval.minimum-similarity:0.2}") double minimumVectorSimilarity,
+			@Value("${pbrag.retrieval.minimum-bm25-score:1.0}") double minimumBm25Score,
+			@Value("${pbrag.rag.maximum-context-characters:12000}") int maximumContextCharacters) {
 		this.knowledgeBaseService = knowledgeBaseService;
 		this.mapper = mapper;
 		this.runService = runService;
@@ -68,6 +75,11 @@ public class RetrievalServiceImpl implements RetrievalService {
 		this.finalTopK = positive("top-k", finalTopK);
 		this.rrfConstant = positive("rrf-constant", rrfConstant);
 		this.minimumVectorSimilarity = range("minimum-similarity", minimumVectorSimilarity, -1, 1);
+		this.minimumBm25Score = nonNegative("minimum-bm25-score", minimumBm25Score);
+		if (maximumContextCharacters < 1000) {
+			throw new IllegalArgumentException("maximum-context-characters must be at least 1000");
+		}
+		this.maximumContextCharacters = maximumContextCharacters;
 	}
 
 	@Override
@@ -86,32 +98,63 @@ public class RetrievalServiceImpl implements RetrievalService {
 			float[] embedding = embeddingModel.embed(query);
 			if (embedding.length != embeddingDimensions) throw new IllegalStateException(
 					"Query embedding dimension mismatch: expected %d but got %d".formatted(embeddingDimensions, embedding.length));
+			List<RetrievalStageResult> stages = new ArrayList<>();
+			List<RetrievalStageSummary> summaries = new ArrayList<>();
+			long stageStarted = System.nanoTime();
 			List<RetrievalHit> vector = mapper.searchCurrentVersions(workspaceId, knowledgeBaseId,
 					vectorLiteral(embedding), minimumVectorSimilarity, candidateTopK);
-			List<RetrievalHit> keyword = mapper.searchBm25CurrentVersions(workspaceId,
+			save(runId, workspaceId, stages, summaries,
+					summary(RetrievalStage.VECTOR, RetrievalStageStatus.COMPLETED, vector.size(),
+							stageStarted, null, Map.of("minimumScore", minimumVectorSimilarity)),
+					ranked(RetrievalStage.VECTOR, vector, "vectorScore"));
+			stageStarted = System.nanoTime();
+			List<RetrievalHit> rawKeyword = mapper.searchBm25CurrentVersions(workspaceId,
 					knowledgeBaseId, query, candidateTopK);
-			List<RetrievalStageResult> stages = new ArrayList<>();
-			save(runId, workspaceId, stages, ranked(RetrievalStage.VECTOR, vector, "vectorScore"));
-			save(runId, workspaceId, stages, ranked(RetrievalStage.KEYWORD, keyword, "bm25Score"));
+			List<RetrievalHit> keyword = rawKeyword.stream()
+					.filter(hit -> hit.similarity() >= minimumBm25Score).toList();
+			save(runId, workspaceId, stages, summaries,
+					summary(RetrievalStage.KEYWORD, RetrievalStageStatus.COMPLETED, keyword.size(),
+							stageStarted, null, Map.of("minimumScore", minimumBm25Score,
+									"unfilteredCandidateCount", rawKeyword.size())),
+					ranked(RetrievalStage.KEYWORD, keyword, "bm25Score"));
+			stageStarted = System.nanoTime();
 			List<RetrievalStageResult> ordered = fuse(vector, keyword);
-			save(runId, workspaceId, stages, ordered);
+			save(runId, workspaceId, stages, summaries,
+					summary(RetrievalStage.FUSION, RetrievalStageStatus.COMPLETED, ordered.size(),
+							stageStarted, null, Map.of("rrfConstant", rrfConstant)), ordered);
 			String finalStage = "FUSION";
+			String degradationCode = null;
 			if (rerankClient.enabled() && !ordered.isEmpty()) {
+				stageStarted = System.nanoTime();
 				try {
 					ordered = rerank(query, ordered);
-					save(runId, workspaceId, stages, ordered);
+					save(runId, workspaceId, stages, summaries,
+							summary(RetrievalStage.RERANK, RetrievalStageStatus.COMPLETED, ordered.size(),
+									stageStarted, null, Map.of("model", rerankClient.model())), ordered);
 					finalStage = "RERANK";
 				}
 				catch (RerankTransientException exception) {
 					log.warn("rerank_degraded runId={} reason={}", runId, exception.getClass().getSimpleName());
-					finalStage = "FUSION_RERANK_DEGRADED";
+					degradationCode = "RERANK_TRANSIENT_FAILURE";
+					save(runId, workspaceId, stages, summaries,
+							summary(RetrievalStage.RERANK, RetrievalStageStatus.DEGRADED, 0,
+									stageStarted, degradationCode, Map.of("fallbackStage", "FUSION")), List.of());
 				}
 			}
+			else {
+				String skipCode = rerankClient.enabled() ? "RERANK_NO_CANDIDATES" : "RERANK_DISABLED";
+				save(runId, workspaceId, stages, summaries,
+						summary(RetrievalStage.RERANK, RetrievalStageStatus.SKIPPED, 0,
+								System.nanoTime(), skipCode, Map.of()), List.of());
+			}
+			stageStarted = System.nanoTime();
 			List<RetrievalStageResult> context = context(ordered);
-			save(runId, workspaceId, stages, context);
-			runService.complete(runId, elapsedMillis(started));
-			return new RetrievalPipelineResult(runId, finalStage,
-					context.stream().map(this::scoredHit).toList(), List.copyOf(stages));
+			save(runId, workspaceId, stages, summaries,
+					summary(RetrievalStage.CONTEXT, RetrievalStageStatus.COMPLETED, context.size(),
+							stageStarted, null, Map.of("maximumCharacters", maximumContextCharacters)), context);
+			runService.complete(runId, elapsedMillis(started), finalStage, degradationCode);
+			return new RetrievalPipelineResult(runId, finalStage, degradationCode,
+					context.stream().map(this::scoredHit).toList(), List.copyOf(stages), List.copyOf(summaries));
 		}
 		catch (RuntimeException exception) {
 			try {
@@ -126,9 +169,11 @@ public class RetrievalServiceImpl implements RetrievalService {
 	}
 
 	private void save(UUID runId, UUID workspaceId, List<RetrievalStageResult> all,
+			List<RetrievalStageSummary> summaries, RetrievalStageSummary summary,
 			List<RetrievalStageResult> stage) {
-		runService.saveStage(runId, workspaceId, stage);
+		runService.saveStage(runId, workspaceId, summary, stage);
 		all.addAll(stage);
+		summaries.add(summary);
 	}
 
 	private List<RetrievalStageResult> ranked(RetrievalStage stage, List<RetrievalHit> hits, String scoreName) {
@@ -186,10 +231,14 @@ public class RetrievalServiceImpl implements RetrievalService {
 
 	private List<RetrievalStageResult> context(List<RetrievalStageResult> ordered) {
 		List<RetrievalStageResult> result = new ArrayList<>();
+		int characters = 0;
 		for (int i = 0; i < Math.min(finalTopK, ordered.size()); i++) {
 			RetrievalStageResult item = ordered.get(i);
+			int candidateCharacters = item.hit().content().length();
+			if (!result.isEmpty() && characters + candidateCharacters > maximumContextCharacters) break;
 			result.add(new RetrievalStageResult(RetrievalStage.CONTEXT, i + 1, item.score(), item.hit(),
 					Map.of("sourceStage", item.stage().name(), "sourceRank", item.rank())));
+			characters += candidateCharacters;
 		}
 		return List.copyOf(result);
 	}
@@ -204,6 +253,8 @@ public class RetrievalServiceImpl implements RetrievalService {
 		return Map.of("candidateTopK", candidateTopK, "fusionTopK", fusionTopK,
 				"rerankTopK", rerankTopK, "finalTopK", finalTopK, "rrfConstant", rrfConstant,
 				"minimumVectorSimilarity", minimumVectorSimilarity,
+				"minimumBm25Score", minimumBm25Score,
+				"maximumContextCharacters", maximumContextCharacters,
 				"keywordRetriever", "PARADEDB_BM25_CHINESE_LINDERA",
 				"rerankEnabled", rerankClient.enabled());
 	}
@@ -231,10 +282,20 @@ public class RetrievalServiceImpl implements RetrievalService {
 		return value;
 	}
 
+	private static double nonNegative(String name, double value) {
+		if (!Double.isFinite(value) || value < 0) throw new IllegalArgumentException(name + " must be finite and non-negative");
+		return value;
+	}
+
+	private static RetrievalStageSummary summary(RetrievalStage stage, RetrievalStageStatus status,
+			int candidateCount, long started, String errorCode, Map<String, Object> metadata) {
+		return new RetrievalStageSummary(stage, status, candidateCount, elapsedMillis(started), errorCode, metadata);
+	}
+
 	private static long elapsedMillis(long started) { return (System.nanoTime() - started) / 1_000_000; }
 	private static String errorCode(RuntimeException error) {
-		return error.getMessage() != null && error.getMessage().startsWith("Rerank")
-				? "RERANK_PROTOCOL_ERROR" : "RETRIEVAL_FAILED";
+		if (error instanceof RerankProtocolException) return "RERANK_PROTOCOL_ERROR";
+		return "RETRIEVAL_FAILED";
 	}
 
 	private final class FusionAccumulator {

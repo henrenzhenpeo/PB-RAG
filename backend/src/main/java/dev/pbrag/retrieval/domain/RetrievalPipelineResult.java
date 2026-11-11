@@ -7,6 +7,8 @@ import java.util.UUID;
 public record RetrievalPipelineResult(
 		UUID runId,
 		String finalStage,
+		String degradationCode,
 		List<RetrievalHit> hits,
-		List<RetrievalStageResult> stages) {
+		List<RetrievalStageResult> stages,
+		List<RetrievalStageSummary> stageSummaries) {
 }

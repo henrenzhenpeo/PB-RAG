@@ -35,8 +35,11 @@
 - pgvector 与 ParadeDB BM25（`chinese_lindera`）各召回 Top 30；
 - RRF(k=60)、独立 `RerankClient`、瞬时故障降级和最终 Top 6 上下文；
 - `retrieval_runs` / `retrieval_candidates` 保存 VECTOR、KEYWORD、FUSION、RERANK、CONTEXT 阶段；
+- V9 增加 `retrieval_stage_summaries`，保存零结果、跳过和降级阶段的状态、候选数、耗时与错误码；运行记录保存实际最终阶段和降级原因；
 - `/retrieval/search` 与 `/retrieval/debug` 支持检索及阶段快照查看；
 - 只检索当前文档版本，并返回 Chunk、版本、稳定来源位置和分数；
+- BM25 使用可配置最低证据分数，当前基线为 `1.0`；最终 `CONTEXT` 同时执行 Top-K 与字符预算裁剪，因此阶段记录等于真实 Prompt 证据；
+- 百炼 Rerank 配置独立连接/读取超时，校验结果数量、下标、重复项和非有限分数，瞬时失败显式降级到 FUSION；
 - 确定性无证据拒答、版本化 Prompt、结构化 SSE 和受限引用原文摘录；
 - 会话、消息和引用按当前用户持久化，刷新后可恢复；
 - 助手消息有 `STREAMING`、`COMPLETED`、`INTERRUPTED` 明确终态；
@@ -68,12 +71,14 @@
 - Mapper XML 语法检查和 `git diff --check` 最近均通过；
 - 显式停止闭环的新增测试代码尚未执行完整编译与测试，不能视为已验证完成。
 - Prompt 跨平台换行修复已补充 CRLF + BOM 回归测试代码，按协作规则尚未执行编译与测试。
+- 检索结果可追溯增强、BM25 证据门槛、真实 Context 裁剪和 Rerank 超时的代码及回归测试已补充；按协作规则尚未执行编译、V9 迁移或真实 Rerank 调用。
 
 以上是最近一次有效验证快照。后续运行应以新结果覆盖本节，不追加历史流水。
 
 ## 当前风险
 
 - `retrieval-v1` 的 40 条真值仍是草案；在人工复核和正式运行前，不能宣称 BM25、RRF 或 Rerank 带来质量提升；
+- BM25 最低分数 `1.0` 只是首版保守基线，必须通过可回答与拒答样本共同校准，避免过度召回或误拒答；
 - `qwen3.7-text-rerank` 尚未启用和实调，供应商地址、限流、延迟、成本和降级行为仍需记录；
 - 完整 Spring 上下文、Flyway、Mapper SQL、`SKIP LOCKED` 和租约恢复尚未由 Testcontainers 自动验证；
 - 停止、模型流中断、断连和页面刷新恢复需要在真实服务与真实文档上继续回测；
@@ -83,8 +88,8 @@
 ## 下一步
 
 1. 人工复核 `retrieval-v1` 的 40 条问题、期望证据和拒答样本；
-2. 在同一语料与配置上运行 Vector、BM25、RRF，记录 Recall@1/3/6、MRR、拒答率和延迟；
+2. 在同一语料与配置上运行 Vector、BM25、RRF，记录 Recall@1/3/6、MRR、拒答率和延迟，并校准 BM25 最低证据分数；
 3. 配置并实调 `qwen3.7-text-rerank`，比较 RRF 与 Rerank Top 10 / Context Top 6；
 4. 用真实文档回测 SSE、无证据拒答、版本引用、显式停止、断流和刷新恢复；
-5. 补充 PostgreSQL 自动化集成测试，覆盖 V8、资源作用域、当前版本过滤、`SKIP LOCKED` 和租约恢复；
+5. 补充 PostgreSQL 自动化集成测试，覆盖 V8/V9、阶段摘要、最终阶段、资源作用域、当前版本过滤、`SKIP LOCKED` 和租约恢复；
 6. 固化评测报告和失败样本后，进入 Agent Run/Step 状态机与最小 ReAct 循环。

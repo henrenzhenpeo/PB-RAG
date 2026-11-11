@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,6 +16,7 @@ import dev.pbrag.retrieval.domain.RetrievalHit;
 import dev.pbrag.retrieval.domain.RetrievalStage;
 import dev.pbrag.retrieval.mapper.ChunkRetrievalMapper;
 import dev.pbrag.retrieval.rerank.RerankClient;
+import dev.pbrag.retrieval.rerank.RerankProtocolException;
 import dev.pbrag.retrieval.rerank.RerankTransientException;
 import dev.pbrag.retrieval.service.impl.RetrievalServiceImpl;
 import java.util.List;
@@ -49,7 +51,7 @@ class RetrievalServiceTests {
 				.flatMap(value -> value.metadata().keySet().stream()))
 				.containsOnly("bm25Score");
 		verify(fixture.knowledgeBaseService).require(fixture.workspaceId, fixture.knowledgeBaseId);
-		verify(fixture.runService).complete(any(UUID.class), any(Long.class));
+		verify(fixture.runService).complete(any(UUID.class), any(Long.class), anyString(), nullable(String.class));
 	}
 
 	@Test
@@ -102,14 +104,75 @@ class RetrievalServiceTests {
 
 		var result = fixture.service().searchDetailed(fixture.workspaceId, fixture.knowledgeBaseId, "question");
 
-		assertThat(result.finalStage()).isEqualTo("FUSION_RERANK_DEGRADED");
+		assertThat(result.finalStage()).isEqualTo("FUSION");
+		assertThat(result.degradationCode()).isEqualTo("RERANK_TRANSIENT_FAILURE");
 		assertThat(result.hits()).extracting(RetrievalHit::chunkId).containsExactly(first.chunkId());
 		assertThat(result.stages()).noneMatch(value -> value.stage() == RetrievalStage.RERANK);
 	}
 
+	@Test
+	void failsTheRunWhenRerankReturnsAnInvalidProtocolResponse() {
+		Fixture fixture = new Fixture();
+		when(fixture.embeddingModel.embed(anyString())).thenReturn(new float[] { 1f, 2f, 3f });
+		when(fixture.mapper.searchCurrentVersions(any(), any(), anyString(), anyDouble(), anyInt()))
+				.thenReturn(List.of(hit(0.9)));
+		when(fixture.mapper.searchBm25CurrentVersions(any(), any(), anyString(), anyInt()))
+				.thenReturn(List.of());
+		when(fixture.rerankClient.enabled()).thenReturn(true);
+		when(fixture.rerankClient.rerank(anyString(), any(), anyInt()))
+				.thenThrow(new RerankProtocolException("invalid response"));
+
+		assertThatThrownBy(() -> fixture.service().searchDetailed(
+				fixture.workspaceId, fixture.knowledgeBaseId, "question"))
+				.isInstanceOf(RerankProtocolException.class);
+		verify(fixture.runService).fail(any(UUID.class), any(Long.class),
+				org.mockito.ArgumentMatchers.eq("RERANK_PROTOCOL_ERROR"), any(RerankProtocolException.class));
+	}
+
+	@Test
+	void rejectsBm25CandidatesBelowTheConfiguredEvidenceThreshold() {
+		Fixture fixture = new Fixture();
+		when(fixture.embeddingModel.embed(anyString())).thenReturn(new float[] { 1f, 2f, 3f });
+		when(fixture.mapper.searchCurrentVersions(any(), any(), anyString(), anyDouble(), anyInt()))
+				.thenReturn(List.of());
+		when(fixture.mapper.searchBm25CurrentVersions(any(), any(), anyString(), anyInt()))
+				.thenReturn(List.of(hit(0.5)));
+
+		var result = fixture.service().searchDetailed(fixture.workspaceId, fixture.knowledgeBaseId, "question");
+
+		assertThat(result.hits()).isEmpty();
+		assertThat(result.stageSummaries()).anySatisfy(summary -> {
+			assertThat(summary.stage()).isEqualTo(RetrievalStage.KEYWORD);
+			assertThat(summary.candidateCount()).isZero();
+			assertThat(summary.metadata()).containsEntry("unfilteredCandidateCount", 1);
+		});
+	}
+
+	@Test
+	void contextStageMatchesTheConfiguredPromptCharacterBudget() {
+		Fixture fixture = new Fixture();
+		RetrievalHit first = hit(0.9, "a".repeat(700));
+		RetrievalHit second = hit(0.8, "b".repeat(700));
+		when(fixture.embeddingModel.embed(anyString())).thenReturn(new float[] { 1f, 2f, 3f });
+		when(fixture.mapper.searchCurrentVersions(any(), any(), anyString(), anyDouble(), anyInt()))
+				.thenReturn(List.of(first, second));
+		when(fixture.mapper.searchBm25CurrentVersions(any(), any(), anyString(), anyInt()))
+				.thenReturn(List.of());
+
+		var result = fixture.service().searchDetailed(fixture.workspaceId, fixture.knowledgeBaseId, "question");
+
+		assertThat(result.hits()).extracting(RetrievalHit::chunkId).containsExactly(first.chunkId());
+		assertThat(result.stages().stream().filter(value -> value.stage() == RetrievalStage.CONTEXT))
+				.hasSize(1);
+	}
+
 	private static RetrievalHit hit(double score) {
+		return hit(score, "evidence");
+	}
+
+	private static RetrievalHit hit(double score, String content) {
 		return new RetrievalHit(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-				"README.md", 0, "evidence", "{}", score);
+				"README.md", 0, content, "{}", score);
 	}
 
 	private static final class Fixture {
@@ -131,7 +194,7 @@ class RetrievalServiceTests {
 		private RetrievalService service() {
 			return new RetrievalServiceImpl(knowledgeBaseService, mapper, runService,
 					rerankClient, embeddingModel, "embedding-model", 3,
-					30, 30, 10, 6, 60, 0.2);
+					30, 30, 10, 6, 60, 0.2, 1.0, 1000);
 		}
 	}
 }

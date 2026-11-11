@@ -17,6 +17,7 @@
 - `content` 使用 `chinese_lindera` tokenizer；
 - `workspace_id` 和 `document_version_id` 一并进入索引，为资源条件和后续查询优化保留空间；
 - 查询使用 `paradedb.match`，按 `paradedb.score` 降序取 Top 30；
+- 对 Top 30 应用可配置的 BM25 最低证据分数；首版基线为 `1.0`，必须通过 `retrieval-v1` 校准，不能视为长期阈值；
 - Workspace、知识库和 `documents.current_version_id` 条件仍在召回 SQL 中执行，禁止跨范围召回后再由应用过滤。
 
 流水线保持：
@@ -31,7 +32,7 @@ Vector Top 30 + BM25 Top 30
 
 BM25 分数只作为 `KEYWORD` 阶段观测数据保存。RRF 只使用两路排名，不归一化或直接相加向量分数与 BM25 分数。动态权重暂不加入，必须等固定数据集证明收益并具备意图分类降级策略后再决策。
 
-数据库迁移 V8 创建 `pg_search` 扩展、删除 trigram 索引并创建 BM25 索引。为保证已部署环境的 Flyway 历史不可变，V7 保留原始 `pg_trgm` 建表记录；V8 不删除 `pg_trgm` 扩展，避免影响数据库内潜在的其他使用者。
+数据库迁移 V8 创建 `pg_search` 扩展、删除 trigram 索引并创建 BM25 索引。为保证已部署环境的 Flyway 历史不可变，V7 保留原始 `pg_trgm` 建表记录；V8 不删除 `pg_trgm` 扩展，避免影响数据库内潜在的其他使用者。低于证据阈值的 BM25 候选不会进入 RRF，但阶段摘要保留过滤前数量和实际阈值，便于评测调参。
 
 ## 与 WeKnora 的机制对照
 

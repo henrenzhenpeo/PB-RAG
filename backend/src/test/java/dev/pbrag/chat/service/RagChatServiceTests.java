@@ -36,7 +36,7 @@ class RagChatServiceTests {
 
 		RagChatService service = new RagChatServiceImpl(
 				mock(RetrievalService.class), mock(ChatHistoryService.class),
-				new RagCancellationRegistry(), mock(StreamingChatModel.class), prompt, 12000);
+				new RagCancellationRegistry(), mock(StreamingChatModel.class), prompt);
 
 		assertThat(service).isNotNull();
 	}
@@ -62,7 +62,7 @@ class RagChatServiceTests {
 		ByteArrayResource prompt = new ByteArrayResource(
 				"---\nid: test\n---\nOnly use evidence.".getBytes(StandardCharsets.UTF_8));
 		RagChatService service = new RagChatServiceImpl(
-				retrievalService, historyService, registry, chatModel, prompt, 12000);
+				retrievalService, historyService, registry, chatModel, prompt);
 
 		ChatHistoryService.StopResult result = service.stop(
 				userId, workspaceId, knowledgeBaseId, sessionId, messageId);
@@ -90,7 +90,7 @@ class RagChatServiceTests {
 				"---\nid: test\n---\nOnly use evidence."
 						.getBytes(StandardCharsets.UTF_8));
 		RagChatService service = new RagChatServiceImpl(
-				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt, 12000);
+				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt);
 
 		List<RagStreamEvent> events = service.answer(userId, workspaceId, knowledgeBaseId, null, "unknown")
 				.collectList().block();
@@ -118,7 +118,7 @@ class RagChatServiceTests {
 				"---\nid: test\n---\nOnly use evidence."
 						.getBytes(StandardCharsets.UTF_8));
 		RagChatService service = new RagChatServiceImpl(
-				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt, 12000);
+				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt);
 
 		List<RagStreamEvent> events = service.answer(userId, workspaceId, knowledgeBaseId, null, "question")
 				.collectList().block();
@@ -151,7 +151,7 @@ class RagChatServiceTests {
 		ByteArrayResource prompt = new ByteArrayResource(
 				"---\nid: test\n---\nOnly use evidence.".getBytes(StandardCharsets.UTF_8));
 		RagChatService service = new RagChatServiceImpl(
-				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt, 12000);
+				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt);
 
 		List<RagStreamEvent> events = service.answer(userId, workspaceId, knowledgeBaseId, null, "question")
 				.collectList().block();
@@ -181,7 +181,7 @@ class RagChatServiceTests {
 		ByteArrayResource prompt = new ByteArrayResource(
 				"---\nid: test\n---\nOnly use evidence.".getBytes(StandardCharsets.UTF_8));
 		RagChatService service = new RagChatServiceImpl(
-				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt, 12000);
+				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt);
 
 		List<RagStreamEvent> events = service.answer(userId, workspaceId, knowledgeBaseId, null, "question")
 				.collectList().block();

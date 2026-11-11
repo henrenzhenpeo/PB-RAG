@@ -104,12 +104,16 @@ pbrag:
     top-k: 6
     rrf-constant: 60
     minimum-similarity: 0.2
+    # 首版保守过滤极弱的词项命中，后续必须用 retrieval-v1 校准。
+    minimum-bm25-score: 1.0
     rerank:
       enabled: ${PBRAG_RERANK_ENABLED:false}
       # 百炼业务空间专属地址，例如 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
       url: ${PBRAG_RERANK_URL:}
       api-key: ${PBRAG_RERANK_API_KEY:${OPENAI_API_KEY:}}
       model: ${PBRAG_RERANK_MODEL:qwen3.7-text-rerank}
+      connect-timeout: ${PBRAG_RERANK_CONNECT_TIMEOUT:2s}
+      read-timeout: ${PBRAG_RERANK_READ_TIMEOUT:10s}
   rag:
     maximum-context-characters: 12000
 

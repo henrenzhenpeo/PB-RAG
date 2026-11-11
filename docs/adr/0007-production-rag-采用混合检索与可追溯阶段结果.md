@@ -67,7 +67,11 @@ Rerank 通过项目内 `RerankClient` 接口接入，Production RAG 不依赖供
 - `retrieval_runs`：一次检索的资源范围、问题、策略、配置、模型、状态、耗时和错误；
 - `retrieval_candidates`：`VECTOR`、`KEYWORD`、`FUSION`、`RERANK`、`CONTEXT` 各阶段的 Chunk、文档版本、排名、分数和 JSONB 元数据。
 
+V9 进一步增加 `retrieval_stage_summaries`，即使阶段没有候选，也记录 `COMPLETED`、`SKIPPED` 或 `DEGRADED`、候选数量、耗时、错误码和配置。`retrieval_runs` 同时保存实际 `final_stage` 与 `degradation_code`，避免把 Rerank 禁用或供应商瞬时失败的运行误读为成功执行了重排。
+
 阶段结果不重复保存 Chunk 正文，正文继续以版本化 Chunk 为事实来源。候选表故意不对 Chunk 建删除约束：入库重试会按版本原子替换 Chunk，历史检索记录必须保留其原始标识而不能阻塞恢复。普通在线运行的保留周期后续由运维策略处理；评测运行长期保留。
+
+`CONTEXT` 阶段必须同时满足最终 Top-K 和 Prompt 字符预算；问答层直接使用该阶段结果，不得在持久化之后再次静默裁剪，否则历史记录将不等于真实模型输入。
 
 ### 失败语义
 

@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 提供可独立观察的基础向量检索 API，便于调试和后续评测。 */
+/** 提供可独立观察的混合检索 API，便于调试和后续评测。 */
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/retrieval")
 @ConditionalOnProperty(name = "spring.ai.model.embedding", havingValue = "openai")
@@ -31,7 +31,7 @@ public class RetrievalController {
 		this.service = service;
 	}
 
-	/** 将问题向量化并返回当前文档版本中的 Top-K Chunk 和来源位置。 */
+	/** 执行向量、BM25、RRF 和可选 Rerank，返回最终上下文及来源位置。 */
 	@PostMapping("/search")
 	public ResponseEntity<ApiResponse<List<RetrievalHit>>> search(
 			@PathVariable UUID workspaceId,

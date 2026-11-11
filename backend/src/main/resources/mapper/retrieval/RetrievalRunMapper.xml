@@ -22,9 +22,21 @@
 		)
 	</insert>
 
+	<insert id="insertStageSummary">
+		INSERT INTO retrieval_stage_summaries (
+			retrieval_run_id, workspace_id, stage, status, candidate_count,
+			latency_ms, error_code, metadata
+		) VALUES (
+			#{runId}, #{workspaceId}, #{summary.stage}, #{summary.status},
+			#{summary.candidateCount}, #{summary.latencyMs}, #{summary.errorCode},
+			CAST(#{metadata} AS jsonb)
+		)
+	</insert>
+
 	<update id="complete">
 		UPDATE retrieval_runs
-		SET status = 'COMPLETED', latency_ms = #{latencyMs}, completed_at = CURRENT_TIMESTAMP
+		SET status = 'COMPLETED', latency_ms = #{latencyMs}, final_stage = #{finalStage},
+		    degradation_code = #{degradationCode}, completed_at = CURRENT_TIMESTAMP
 		WHERE id = #{id} AND status = 'RUNNING'
 	</update>
 

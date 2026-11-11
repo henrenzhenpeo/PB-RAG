@@ -46,7 +46,6 @@ public class RagChatServiceImpl implements RagChatService {
 	private final RagCancellationRegistry cancellationRegistry;
 	private final StreamingChatModel chatModel;
 	private final String systemPrompt;
-	private final int maximumContextCharacters;
 
 	/** 注入检索和流式模型，并在启动时加载版本化运行时 Prompt。 */
 	public RagChatServiceImpl(
@@ -54,18 +53,13 @@ public class RagChatServiceImpl implements RagChatService {
 			ChatHistoryService historyService,
 			RagCancellationRegistry cancellationRegistry,
 			StreamingChatModel chatModel,
-			@Value("classpath:prompts/rag/answer_with_citations.md") Resource promptResource,
-			@Value("${pbrag.rag.maximum-context-characters:12000}") int maximumContextCharacters)
+			@Value("classpath:prompts/rag/answer_with_citations.md") Resource promptResource)
 			throws IOException {
 		this.retrievalService = retrievalService;
 		this.historyService = historyService;
 		this.cancellationRegistry = cancellationRegistry;
 		this.chatModel = chatModel;
 		this.systemPrompt = promptBody(promptResource.getContentAsString(StandardCharsets.UTF_8));
-		if (maximumContextCharacters < 1000) {
-			throw new IllegalArgumentException("RAG context limit must be at least 1000 characters");
-		}
-		this.maximumContextCharacters = maximumContextCharacters;
 	}
 
 	/**
@@ -129,7 +123,7 @@ public class RagChatServiceImpl implements RagChatService {
 	private Flux<RagStreamEvent> answerAfterRetrieval(
 			UUID workspaceId, UUID knowledgeBaseId, String question,
 			StartedTurn turn, StringBuffer answer, AtomicBoolean finalized) {
-		List<RetrievalHit> evidence = fitContext(retrievalService.search(workspaceId, knowledgeBaseId, question));
+		List<RetrievalHit> evidence = retrievalService.search(workspaceId, knowledgeBaseId, question);
 		List<RagCitation> citations = citations(evidence);
 		historyService.saveCitations(turn, citations);
 		if (evidence.isEmpty()) {
@@ -211,18 +205,6 @@ public class RagChatServiceImpl implements RagChatService {
 		}).subscribeOn(Schedulers.boundedElastic())
 				.thenReturn(RagStreamEvent.error(errorCode, message))
 				.flux();
-	}
-
-	/** 按检索顺序装配上下文，并在证据边界处截断而不是截断单个 Chunk。 */
-	private List<RetrievalHit> fitContext(List<RetrievalHit> hits) {
-		List<RetrievalHit> accepted = new ArrayList<>();
-		int characters = 0;
-		for (RetrievalHit hit : hits) {
-			if (!accepted.isEmpty() && characters + hit.content().length() > maximumContextCharacters) break;
-			accepted.add(hit);
-			characters += hit.content().length();
-		}
-		return List.copyOf(accepted);
 	}
 
 	/** 将证据转换为包含受限原文摘录的稳定引用元数据。 */

@@ -1,6 +1,7 @@
 package dev.pbrag.retrieval.mapper;
 
 import dev.pbrag.retrieval.domain.RetrievalStageResult;
+import dev.pbrag.retrieval.domain.RetrievalStageSummary;
 import java.util.UUID;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -27,8 +28,19 @@ public interface RetrievalRunMapper {
 			@Param("candidate") RetrievalStageResult candidate,
 			@Param("metadata") String metadata);
 
+	/** 保存阶段摘要，使零候选、跳过和降级仍然可观察。 */
+	int insertStageSummary(
+			@Param("runId") UUID runId,
+			@Param("workspaceId") UUID workspaceId,
+			@Param("summary") RetrievalStageSummary summary,
+			@Param("metadata") String metadata);
+
 	/** 将运行原子收敛为成功终态。 */
-	int complete(@Param("id") UUID id, @Param("latencyMs") long latencyMs);
+	int complete(
+			@Param("id") UUID id,
+			@Param("latencyMs") long latencyMs,
+			@Param("finalStage") String finalStage,
+			@Param("degradationCode") String degradationCode);
 
 	/** 将运行原子收敛为失败终态并保存受限错误。 */
 	int fail(
