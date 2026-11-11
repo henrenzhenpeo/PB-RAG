@@ -53,6 +53,7 @@
 - 引用侧栏现展示最多 500 字符的安全原文摘录，并继续保留文档名、Chunk、版本、来源位置和相似度；
 - 新增 Flyway V6 与 `chat_sessions`、`chat_messages`、`message_citations`：会话绑定当前用户和知识库，每轮问题/回答使用 `turn_id` 配对，引用绑定助手消息；
 - 流式助手消息从 `STREAMING` 进入 `COMPLETED` 或 `INTERRUPTED`，正常完成保存全文，客户端停止或模型异常保留部分正文；刷新页面可通过 session 查询恢复历史消息与引用，服务重启遗留的流式消息会收敛为中断状态。
+- 停止生成已形成显式闭环：前端调用带 Session/Message 标识的停止 API，后端校验当前用户、Workspace 与知识库归属，原子保存 `INTERRUPTED/CLIENT_CANCELLED` 和服务端已接收的部分正文，再向本实例模型流发送取消信号；重复停止幂等，直接断网或离页继续由 SSE 取消兜底。
 
 ## 当前关键决策
 
@@ -62,6 +63,7 @@
 - PostgreSQL Job 表是任务事实来源，Redis 只负责唤醒、取消标记和限流；
 - 首期在 Java 进程内解析 Markdown 和普通 PDF；
 - 不实现多租户和 RBAC，但保留 `workspace_id` 与复合外键确保资源归属一致。
+- 当前开发阶段接受 `application.yml` 中已有的明文默认连接配置和模型凭据；后续常规代码评审不再重复报告这一项，除非项目发起人明确重新开启该检查。该约定只调整评审范围，不代表扩展到其他文件或新增凭据泄露。
 
 ## 当前风险
 
@@ -115,6 +117,7 @@ Docker 一键启动完整环境和 CI 流水线按当前决定降为最低优先
 - 问答交互与错误语义优化：前端 `npm run type-check`、`npm run build-only` 通过；JDK 21 定向运行 `RagChatServiceTests` 与 `ApiExceptionHandlerTests`，4 个测试全部通过。
 - 千问末尾空文本帧修复：JDK 21 定向运行 `RagChatServiceTests`，4 个测试全部通过，包含“正文帧 + 元数据空帧 + completed”回归场景。
 - 全链路流式阶段反馈：JDK 21 定向运行 `RagChatServiceTests`，4 个测试全部通过；前端 `npm run type-check`、`npm run build-only` 通过。
+- 显式停止闭环：已补充停止持久化、运行时取消注册表和前端状态恢复测试代码；按本轮要求仅完成静态差异与 Mapper XML 检查，尚未执行编译和测试。
 
 ## 最新修复
 

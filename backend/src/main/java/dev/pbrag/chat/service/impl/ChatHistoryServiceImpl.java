@@ -82,14 +82,33 @@ public class ChatHistoryServiceImpl implements ChatHistoryService {
 	@Override
 	@Transactional
 	public void complete(StartedTurn turn, String answer) {
-		finish(turn, "COMPLETED", answer, null);
+		finish(turn, "COMPLETED", answer, null, true);
 	}
 
 	/** 中断保留部分正文，避免断流后丢失用户已看到的内容。 */
 	@Override
 	@Transactional
 	public void interrupt(StartedTurn turn, String partialAnswer, String errorCode) {
-		finish(turn, "INTERRUPTED", partialAnswer, errorCode);
+		finish(turn, "INTERRUPTED", partialAnswer, errorCode, false);
+	}
+
+	/** 显式停止先验证会话属于当前用户，再通过条件更新保证重复请求不会改写既有终态。 */
+	@Override
+	@Transactional
+	public StopResult stop(
+			UUID userId, UUID workspaceId, UUID knowledgeBaseId,
+			UUID sessionId, UUID assistantMessageId, String partialAnswer) {
+		requireSession(userId, workspaceId, knowledgeBaseId, sessionId);
+		if (mapper.stopAssistant(
+				workspaceId, sessionId, assistantMessageId,
+				partialAnswer == null ? "" : partialAnswer) == 1) {
+			mapper.touchSession(workspaceId, sessionId);
+			return new StopResult("INTERRUPTED", "CLIENT_CANCELLED");
+		}
+		String status = mapper.selectAssistantStatus(workspaceId, sessionId, assistantMessageId);
+		if (status == null) throw new ResourceNotFoundException("Assistant message not found");
+		// 已完成或已中断均视为幂等成功，停止请求不能反向覆盖既有终态。
+		return new StopResult(status, null);
 	}
 
 	/** 加载前先收敛重启遗留状态，再按 turnId 合并用户消息、助手消息和引用。 */
@@ -119,14 +138,17 @@ public class ChatHistoryServiceImpl implements ChatHistoryService {
 	}
 
 	/** 执行消息终态更新并刷新会话活动时间。 */
-	private void finish(StartedTurn turn, String status, String content, String errorCode) {
+	private void finish(
+			StartedTurn turn, String status, String content,
+			String errorCode, boolean requireTransition) {
 		UUID workspaceId = turn.workspaceId();
-		if (mapper.finishAssistant(
+		int updated = mapper.finishAssistant(
 				workspaceId, turn.assistantMessageId(), status,
-				content == null ? "" : content, errorCode) != 1) {
+				content == null ? "" : content, errorCode);
+		if (updated != 1 && requireTransition) {
 			throw new IllegalStateException("Assistant message is no longer streaming");
 		}
-		mapper.touchSession(workspaceId, turn.sessionId());
+		if (updated == 1) mapper.touchSession(workspaceId, turn.sessionId());
 	}
 
 	/** 查询并验证会话完整资源归属，避免通过会话 ID 跨用户读取。 */

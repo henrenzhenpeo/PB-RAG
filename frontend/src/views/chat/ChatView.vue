@@ -2,13 +2,13 @@
 // 知识问答工作台：按轮次展示问题、流式回答、状态和与当前回答绑定的检索引用。
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getChatSession, streamRagAnswer, type RagCitation } from '@/api/rag'
+import { getChatSession, stopRagAnswer, streamRagAnswer, type RagCitation } from '@/api/rag'
 import { listKnowledgeBases, type KnowledgeBase } from '@/api/knowledgeBases'
 import { errorMessage } from '@/api/http'
 import { renderUntrustedMarkdown } from '@/utils/markdown'
 
 type TurnStatus = 'streaming' | 'completed' | 'interrupted' | 'failed' | 'stopped'
-interface ChatTurn { id: string; question: string; answer: string; citations: RagCitation[]; status: TurnStatus; progressText: string; error: string }
+interface ChatTurn { id: string; messageId: string | null; question: string; answer: string; citations: RagCitation[]; status: TurnStatus; progressText: string; error: string }
 
 const route = useRoute()
 const router = useRouter()
@@ -19,7 +19,7 @@ const knowledgeBases = ref<KnowledgeBase[]>([])
 const loadingKnowledgeBases = ref(false)
 const question = ref('')
 const turns = ref<ChatTurn[]>([])
-const activeTurnId = ref<number | null>(null)
+const activeTurnId = ref<string | null>(null)
 const conversation = ref<HTMLElement | null>(null)
 const pageError = ref('')
 const sessionId = ref<string | null>(null)
@@ -53,10 +53,11 @@ async function restoreSession(requestedSessionId: string) {
     sessionId.value = session.id
     turns.value = session.turns.map((turn) => ({
       id: turn.assistantMessageId,
+      messageId: turn.assistantMessageId,
       question: turn.question,
       answer: turn.answer,
       citations: turn.citations,
-      status: turn.status === 'COMPLETED' ? 'completed' : 'interrupted',
+      status: turn.status === 'COMPLETED' ? 'completed' : turn.errorCode === 'CLIENT_CANCELLED' ? 'stopped' : 'interrupted',
       progressText: '',
       error: turn.errorCode ? `上次生成未正常完成（${turn.errorCode}）` : '',
     }))
@@ -80,7 +81,7 @@ async function ask(text = question.value) {
   if (!value || !selectedKbId.value || streaming.value) return
   controller = new AbortController()
   const currentController = controller
-  const turn = reactive<ChatTurn>({ id: crypto.randomUUID(), question: value, answer: '', citations: [], status: 'streaming', progressText: '正在连接知识服务…', error: '' })
+  const turn = reactive<ChatTurn>({ id: crypto.randomUUID(), messageId: null, question: value, answer: '', citations: [], status: 'streaming', progressText: '正在连接知识服务…', error: '' })
   turns.value.push(turn)
   activeTurnId.value = turn.id
   question.value = ''
@@ -89,7 +90,7 @@ async function ask(text = question.value) {
     await streamRagAnswer(workspaceId.value, selectedKbId.value, sessionId.value, value, currentController.signal, (event) => {
       if (event.type === 'started' && event.sessionId) {
         sessionId.value = event.sessionId
-        if (event.messageId) turn.id = event.messageId
+        if (event.messageId) { turn.id = event.messageId; turn.messageId = event.messageId }
         activeTurnId.value = turn.id
         void router.replace({ query: { ...route.query, session: event.sessionId } })
       }
@@ -113,15 +114,24 @@ async function ask(text = question.value) {
   }
 }
 
-function cancel() {
+async function cancel() {
   const turn = turns.value.find((item) => item.status === 'streaming')
-  controller?.abort()
-  if (turn) turn.status = 'stopped'
+  const activeController = controller
+  const activeSessionId = sessionId.value
+  if (turn) { turn.status = 'stopped'; turn.progressText = ''; turn.error = '' }
+  activeController?.abort()
   controller = null
+  if (!turn?.messageId || !activeSessionId || !selectedKbId.value) return
+  try {
+    const result = await stopRagAnswer(workspaceId.value, selectedKbId.value, activeSessionId, turn.messageId)
+    if (result.status === 'COMPLETED') turn.status = 'completed'
+  } catch (caught) {
+    turn.error = `已停止本地输出，但服务端停止确认失败：${errorMessage(caught)}`
+  }
 }
 function retry(turn: ChatTurn) { activeTurnId.value = turn.id; void ask(turn.question) }
 function clearConversation() {
-  cancel()
+  void cancel()
   turns.value = []
   activeTurnId.value = null
   sessionId.value = null
@@ -134,7 +144,7 @@ function renderAnswer(value: string) { return renderUntrustedMarkdown(value) }
 function similarity(value: number) { return `${Math.max(0, Math.min(100, value * 100)).toFixed(1)}%` }
 
 onMounted(loadKnowledgeBases)
-onBeforeUnmount(cancel)
+onBeforeUnmount(() => { void cancel() })
 watch(workspaceId, loadKnowledgeBases)
 watch(selectedKbId, () => { if (turns.value.length) clearConversation() })
 </script>
@@ -164,7 +174,7 @@ watch(selectedKbId, () => { if (turns.value.length) clearConversation() })
               <div v-else-if="turn.status === 'streaming'" class="thinking"><i></i><i></i><i></i></div>
               <p v-if="turn.status === 'interrupted'" class="turn-warning">{{ turn.error || '回答生成中断，已保留收到的内容。' }}</p>
               <p v-else-if="turn.status === 'failed'" class="turn-error">{{ turn.error || '本次问答失败。' }}</p>
-              <p v-else-if="turn.status === 'stopped'" class="turn-muted">已停止生成</p>
+              <p v-else-if="turn.status === 'stopped'" class="turn-muted">{{ turn.error || '已停止生成' }}</p>
               <div class="turn-actions"><button type="button" @click.stop="selectTurn(turn)">{{ turn.citations.length }} 条引用</button><button v-if="['interrupted', 'failed', 'stopped'].includes(turn.status)" type="button" :disabled="streaming" @click.stop="retry(turn)">重新生成</button></div>
             </div></div>
           </article>

@@ -52,6 +52,19 @@ public interface ChatHistoryMapper {
 			@Param("content") String content,
 			@Param("errorCode") String errorCode);
 
+	/** 在会话作用域内把仍在生成的助手消息原子更新为用户停止。 */
+	int stopAssistant(
+			@Param("workspaceId") UUID workspaceId,
+			@Param("sessionId") UUID sessionId,
+			@Param("messageId") UUID messageId,
+			@Param("content") String content);
+
+	/** 查询会话内助手消息是否存在，用于区分幂等停止和错误消息 ID。 */
+	String selectAssistantStatus(
+			@Param("workspaceId") UUID workspaceId,
+			@Param("sessionId") UUID sessionId,
+			@Param("messageId") UUID messageId);
+
 	/** 刷新会话最后活动时间。 */
 	int touchSession(@Param("workspaceId") UUID workspaceId, @Param("sessionId") UUID sessionId);
 

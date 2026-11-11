@@ -180,6 +180,7 @@ GET  /api/workspaces/{workspaceId}/ingestion-jobs/{jobId}
 POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/retrieval/search
 POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/rag/stream
 GET  /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/chat-sessions/{sessionId}
+POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/chat-sessions/{sessionId}/messages/{messageId}/stop
 POST /api/auth/register
 POST /api/auth/login
 POST /api/auth/logout
@@ -187,7 +188,7 @@ GET  /api/auth/me
 PUT  /api/auth/me
 ```
 
-普通 API 统一返回 `ApiResponse<T>`，流式 RAG 使用具名 SSE 事件，同时保留正确 HTTP 状态码。Markdown 与普通文本 PDF 上传流式计算 SHA-256，本地对象存储成功后在同一数据库事务中创建 Document、DocumentVersion 和 IngestionJob；数据库失败时补偿删除本次文件。同一知识库内相同内容返回已有版本与 Job，不生成重复数据；当前上传 API 每个新内容创建新 Document，未来通过显式重传 API 创建已有 Document 的新版本。Java `DocumentParser` 将原文件转换为带行号、页码、标题路径和字符偏移的结构块，PB-RAG 自己完成可复现分块、Chunk 落库、Embedding 和索引编排；复杂版面、OCR 和 Office 文档以后再通过同一接口接入外部解析器。文档列表返回每个 Document 的当前版本和对应入库 Job，查询始终同时约束 `workspace_id` 与 `knowledge_base_id`。基础检索只读取当前文档版本，通过 pgvector cosine distance 返回可追溯证据；RAG 在确定性检索后调用千问流式生成，引用事件绑定 Chunk、文档版本、稳定来源位置和受限原文摘录。会话、消息及引用按当前登录用户持久化，页面刷新后可恢复；模型上下文目前仍保持单轮，避免在评测前无界引入历史噪声。
+普通 API 统一返回 `ApiResponse<T>`，流式 RAG 使用具名 SSE 事件，同时保留正确 HTTP 状态码。Markdown 与普通文本 PDF 上传流式计算 SHA-256，本地对象存储成功后在同一数据库事务中创建 Document、DocumentVersion 和 IngestionJob；数据库失败时补偿删除本次文件。同一知识库内相同内容返回已有版本与 Job，不生成重复数据；当前上传 API 每个新内容创建新 Document，未来通过显式重传 API 创建已有 Document 的新版本。Java `DocumentParser` 将原文件转换为带行号、页码、标题路径和字符偏移的结构块，PB-RAG 自己完成可复现分块、Chunk 落库、Embedding 和索引编排；复杂版面、OCR 和 Office 文档以后再通过同一接口接入外部解析器。文档列表返回每个 Document 的当前版本和对应入库 Job，查询始终同时约束 `workspace_id` 与 `knowledge_base_id`。基础检索只读取当前文档版本，通过 pgvector cosine distance 返回可追溯证据；RAG 在确定性检索后调用千问流式生成，引用事件绑定 Chunk、文档版本、稳定来源位置和受限原文摘录。会话、消息及引用按当前登录用户持久化，页面刷新后可恢复；用户停止生成时，后端在完整用户和资源作用域内原子保存 `INTERRUPTED/CLIENT_CANCELLED` 及部分正文，并通过进程内取消信号终止对应模型流，断连仍由流取消逻辑兜底。模型上下文目前仍保持单轮，避免在评测前无界引入历史噪声。
 
 ### 7.5 日志与链路关联
 

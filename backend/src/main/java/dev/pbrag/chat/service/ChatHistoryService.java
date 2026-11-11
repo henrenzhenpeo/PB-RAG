@@ -22,11 +22,20 @@ public interface ChatHistoryService {
 	/** 将助手消息标记为中断，保留已生成正文和稳定错误码。 */
 	void interrupt(StartedTurn turn, String partialAnswer, String errorCode);
 
+	/** 校验完整资源和用户归属，并将指定流式助手消息幂等标记为用户停止。 */
+	StopResult stop(
+			UUID userId, UUID workspaceId, UUID knowledgeBaseId,
+			UUID sessionId, UUID assistantMessageId, String partialAnswer);
+
 	/** 加载当前用户在指定知识库中的会话快照。 */
 	ChatSessionView require(
 			UUID userId, UUID workspaceId, UUID knowledgeBaseId, UUID sessionId);
 
 	/** 一轮持久化问答的稳定标识。 */
 	record StartedTurn(UUID workspaceId, UUID sessionId, UUID turnId, UUID assistantMessageId) {
+	}
+
+	/** 幂等停止后的实际消息终态。 */
+	record StopResult(String status, String errorCode) {
 	}
 }

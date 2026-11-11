@@ -3,6 +3,7 @@ package dev.pbrag.chat.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +15,7 @@ import dev.pbrag.retrieval.domain.RetrievalHit;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.StreamingChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -25,6 +27,39 @@ import reactor.core.publisher.Flux;
 
 /** RAG 编排的确定性拒答和流式协议回归测试。 */
 class RagChatServiceTests {
+
+	@Test
+	void persistsPartialAnswerAndSignalsTheActiveStreamWhenStopped() throws Exception {
+		UUID userId = UUID.randomUUID();
+		UUID workspaceId = UUID.randomUUID();
+		UUID knowledgeBaseId = UUID.randomUUID();
+		UUID sessionId = UUID.randomUUID();
+		UUID messageId = UUID.randomUUID();
+		RetrievalService retrievalService = mock(RetrievalService.class);
+		ChatHistoryService historyService = mock(ChatHistoryService.class);
+		StreamingChatModel chatModel = mock(StreamingChatModel.class);
+		RagCancellationRegistry registry = new RagCancellationRegistry();
+		RagCancellationRegistry.CancellationHandle handle =
+				registry.register(messageId, () -> "partial answer");
+		AtomicBoolean cancelled = new AtomicBoolean();
+		handle.cancellation().subscribe(ignored -> { }, ignored -> { }, () -> cancelled.set(true));
+		when(historyService.stop(
+				userId, workspaceId, knowledgeBaseId, sessionId, messageId, "partial answer"))
+				.thenReturn(new ChatHistoryService.StopResult("INTERRUPTED", "CLIENT_CANCELLED"));
+		ByteArrayResource prompt = new ByteArrayResource(
+				"---\nid: test\n---\nOnly use evidence.".getBytes(StandardCharsets.UTF_8));
+		RagChatService service = new RagChatServiceImpl(
+				retrievalService, historyService, registry, chatModel, prompt, 12000);
+
+		ChatHistoryService.StopResult result = service.stop(
+				userId, workspaceId, knowledgeBaseId, sessionId, messageId);
+
+		assertThat(result.errorCode()).isEqualTo("CLIENT_CANCELLED");
+		assertThat(cancelled).isTrue();
+		verify(historyService).stop(
+				userId, workspaceId, knowledgeBaseId, sessionId, messageId, "partial answer");
+		registry.release(handle);
+	}
 
 	@Test
 	void refusesWithoutCallingTheModelWhenRetrievalHasNoEvidence() throws Exception {
@@ -42,7 +77,7 @@ class RagChatServiceTests {
 				"---\nid: test\n---\nOnly use evidence."
 						.getBytes(StandardCharsets.UTF_8));
 		RagChatService service = new RagChatServiceImpl(
-				retrievalService, historyService, chatModel, prompt, 12000);
+				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt, 12000);
 
 		List<RagStreamEvent> events = service.answer(userId, workspaceId, knowledgeBaseId, null, "unknown")
 				.collectList().block();
@@ -70,7 +105,7 @@ class RagChatServiceTests {
 				"---\nid: test\n---\nOnly use evidence."
 						.getBytes(StandardCharsets.UTF_8));
 		RagChatService service = new RagChatServiceImpl(
-				retrievalService, historyService, chatModel, prompt, 12000);
+				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt, 12000);
 
 		List<RagStreamEvent> events = service.answer(userId, workspaceId, knowledgeBaseId, null, "question")
 				.collectList().block();
@@ -102,7 +137,8 @@ class RagChatServiceTests {
 				.thenReturn(Flux.error(new IllegalStateException("upstream disconnected")));
 		ByteArrayResource prompt = new ByteArrayResource(
 				"---\nid: test\n---\nOnly use evidence.".getBytes(StandardCharsets.UTF_8));
-		RagChatService service = new RagChatServiceImpl(retrievalService, historyService, chatModel, prompt, 12000);
+		RagChatService service = new RagChatServiceImpl(
+				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt, 12000);
 
 		List<RagStreamEvent> events = service.answer(userId, workspaceId, knowledgeBaseId, null, "question")
 				.collectList().block();
@@ -131,7 +167,8 @@ class RagChatServiceTests {
 				new ChatResponse(List.of())));
 		ByteArrayResource prompt = new ByteArrayResource(
 				"---\nid: test\n---\nOnly use evidence.".getBytes(StandardCharsets.UTF_8));
-		RagChatService service = new RagChatServiceImpl(retrievalService, historyService, chatModel, prompt, 12000);
+		RagChatService service = new RagChatServiceImpl(
+				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt, 12000);
 
 		List<RagStreamEvent> events = service.answer(userId, workspaceId, knowledgeBaseId, null, "question")
 				.collectList().block();

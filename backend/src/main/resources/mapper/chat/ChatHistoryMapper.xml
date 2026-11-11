@@ -82,6 +82,21 @@
 		  AND role = 'ASSISTANT' AND status = 'STREAMING'
 	</update>
 
+	<update id="stopAssistant">
+		UPDATE chat_messages
+		SET status = 'INTERRUPTED', content = #{content}, error_code = 'CLIENT_CANCELLED',
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND session_id = #{sessionId}
+		  AND id = #{messageId} AND role = 'ASSISTANT' AND status = 'STREAMING'
+	</update>
+
+	<select id="selectAssistantStatus" resultType="java.lang.String">
+		SELECT status
+		FROM chat_messages
+		WHERE workspace_id = #{workspaceId} AND session_id = #{sessionId}
+		  AND id = #{messageId} AND role = 'ASSISTANT'
+	</select>
+
 	<update id="touchSession">
 		UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP
 		WHERE workspace_id = #{workspaceId} AND id = #{sessionId}

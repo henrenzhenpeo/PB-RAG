@@ -44,6 +44,13 @@ export interface ChatSession {
   updatedAt: string
 }
 
+export interface StopRagAnswerResponse {
+  sessionId: string
+  messageId: string
+  status: 'COMPLETED' | 'INTERRUPTED'
+  errorCode: string | null
+}
+
 /** 向指定知识库发起带引用的流式 RAG 问答。 */
 export async function streamRagAnswer(
   workspaceId: string,
@@ -70,5 +77,19 @@ export async function getChatSession(workspaceId: string, knowledgeBaseId: strin
     `/workspaces/${workspaceId}/knowledge-bases/${knowledgeBaseId}/chat-sessions/${sessionId}`,
   )
   if (!response.data.success || !response.data.data) throw new Error('无法读取问答会话')
+  return response.data.data
+}
+
+/** 显式停止一条流式回答；服务端负责校验会话归属并持久化停止终态。 */
+export async function stopRagAnswer(
+  workspaceId: string,
+  knowledgeBaseId: string,
+  sessionId: string,
+  messageId: string,
+) {
+  const response = await http.post<ApiResponse<StopRagAnswerResponse>>(
+    `/workspaces/${workspaceId}/knowledge-bases/${knowledgeBaseId}/chat-sessions/${sessionId}/messages/${messageId}/stop`,
+  )
+  if (!response.data.success || !response.data.data) throw new Error('服务端未确认停止状态')
   return response.data.data
 }

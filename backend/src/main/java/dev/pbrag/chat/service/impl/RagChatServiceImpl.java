@@ -4,6 +4,9 @@ import dev.pbrag.chat.domain.RagCitation;
 import dev.pbrag.chat.domain.RagStreamEvent;
 import dev.pbrag.chat.service.ChatHistoryService;
 import dev.pbrag.chat.service.ChatHistoryService.StartedTurn;
+import dev.pbrag.chat.service.ChatHistoryService.StopResult;
+import dev.pbrag.chat.service.RagCancellationRegistry;
+import dev.pbrag.chat.service.RagCancellationRegistry.CancellationHandle;
 import dev.pbrag.chat.service.RagChatService;
 import dev.pbrag.retrieval.domain.RetrievalHit;
 import dev.pbrag.retrieval.service.RetrievalService;
@@ -39,6 +42,7 @@ public class RagChatServiceImpl implements RagChatService {
 	private static final String PROMPT_BODY_MARKER = "\n---\n";
 	private final RetrievalService retrievalService;
 	private final ChatHistoryService historyService;
+	private final RagCancellationRegistry cancellationRegistry;
 	private final StreamingChatModel chatModel;
 	private final String systemPrompt;
 	private final int maximumContextCharacters;
@@ -47,12 +51,14 @@ public class RagChatServiceImpl implements RagChatService {
 	public RagChatServiceImpl(
 			RetrievalService retrievalService,
 			ChatHistoryService historyService,
+			RagCancellationRegistry cancellationRegistry,
 			StreamingChatModel chatModel,
 			@Value("classpath:prompts/rag/answer_with_citations.md") Resource promptResource,
 			@Value("${pbrag.rag.maximum-context-characters:12000}") int maximumContextCharacters)
 			throws IOException {
 		this.retrievalService = retrievalService;
 		this.historyService = historyService;
+		this.cancellationRegistry = cancellationRegistry;
 		this.chatModel = chatModel;
 		this.systemPrompt = promptBody(promptResource.getContentAsString(StandardCharsets.UTF_8));
 		if (maximumContextCharacters < 1000) {
@@ -72,18 +78,22 @@ public class RagChatServiceImpl implements RagChatService {
 		return Flux.defer(() -> {
 			StartedTurn turn = historyService.startTurn(
 					userId, workspaceId, knowledgeBaseId, sessionId, question);
-			StringBuilder answer = new StringBuilder();
+			StringBuffer answer = new StringBuffer();
+			CancellationHandle cancellation = cancellationRegistry.register(
+					turn.assistantMessageId(), answer::toString);
 			AtomicBoolean finalized = new AtomicBoolean();
-			Flux<RagStreamEvent> body = answerAfterRetrieval(
-					workspaceId, knowledgeBaseId, question, turn, answer, finalized)
+			Flux<RagStreamEvent> body = Flux.defer(() -> answerAfterRetrieval(
+					workspaceId, knowledgeBaseId, question, turn, answer, finalized))
 					.onErrorResume(exception -> retrievalFailure(
-							workspaceId, knowledgeBaseId, turn, answer, finalized, exception));
+							workspaceId, knowledgeBaseId, turn, answer, finalized, exception))
+					.takeUntilOther(cancellation.cancellation());
 			return Flux.concat(
 					Flux.just(
 							RagStreamEvent.started(turn.sessionId(), turn.assistantMessageId()),
 							RagStreamEvent.status("正在检索知识库…")),
 					body)
 					.doFinally(signal -> {
+						cancellationRegistry.release(cancellation);
 						if (signal == reactor.core.publisher.SignalType.CANCEL
 								&& finalized.compareAndSet(false, true)) {
 							Schedulers.boundedElastic().schedule(() ->
@@ -100,10 +110,24 @@ public class RagChatServiceImpl implements RagChatService {
 				});
 	}
 
+	/** 先持久化确定性的停止终态，再通知本实例中的模型流释放资源。 */
+	@Override
+	public StopResult stop(
+			UUID userId, UUID workspaceId, UUID knowledgeBaseId,
+			UUID sessionId, UUID assistantMessageId) {
+		String partialAnswer = cancellationRegistry.partialAnswer(assistantMessageId);
+		StopResult result = historyService.stop(
+				userId, workspaceId, knowledgeBaseId, sessionId, assistantMessageId, partialAnswer);
+		cancellationRegistry.cancel(assistantMessageId);
+		log.info("rag_answer_stop_requested workspaceId={} knowledgeBaseId={} sessionId={} messageId={} status={}",
+				workspaceId, knowledgeBaseId, sessionId, assistantMessageId, result.status());
+		return result;
+	}
+
 	/** 在订阅 SSE 后执行检索，使检索或映射异常也能转换为结构化流错误。 */
 	private Flux<RagStreamEvent> answerAfterRetrieval(
 			UUID workspaceId, UUID knowledgeBaseId, String question,
-			StartedTurn turn, StringBuilder answer, AtomicBoolean finalized) {
+			StartedTurn turn, StringBuffer answer, AtomicBoolean finalized) {
 		List<RetrievalHit> evidence = fitContext(retrievalService.search(workspaceId, knowledgeBaseId, question));
 		List<RagCitation> citations = citations(evidence);
 		historyService.saveCitations(turn, citations);
@@ -162,7 +186,7 @@ public class RagChatServiceImpl implements RagChatService {
 	/** 将检索异常持久化为本轮中断，并返回稳定的 SSE 错误。 */
 	private Flux<RagStreamEvent> retrievalFailure(
 			UUID workspaceId, UUID knowledgeBaseId, StartedTurn turn,
-			StringBuilder answer, AtomicBoolean finalized, Throwable exception) {
+			StringBuffer answer, AtomicBoolean finalized, Throwable exception) {
 		log.warn("rag_retrieval_failed workspaceId={} knowledgeBaseId={} errorType={}",
 				workspaceId, knowledgeBaseId, exception.getClass().getSimpleName());
 		return persistInterruption(
@@ -171,7 +195,7 @@ public class RagChatServiceImpl implements RagChatService {
 
 	/** 在弹性线程执行中断落库，完成后发送结构化错误事件。 */
 	private Flux<RagStreamEvent> persistInterruption(
-			StartedTurn turn, StringBuilder answer, AtomicBoolean finalized,
+			StartedTurn turn, StringBuffer answer, AtomicBoolean finalized,
 			String errorCode, String message) {
 		return Mono.fromRunnable(() -> {
 			if (finalized.compareAndSet(false, true)) {
