@@ -9,14 +9,18 @@ runtime mechanisms must remain understandable, testable, and explainable.
 At the beginning of every new task in this repository, read these files in order:
 
 1. `docs/PROJECT_CONTEXT.md`
-2. `docs/ROADMAP_6_WEEKS.md`
-3. `docs/HANDOFF.md`
-4. Any ADR, design document, experiment report, or prompt file relevant to the task
+2. `docs/RULES.md`
+3. `docs/ROADMAP_6_WEEKS.md`
+4. `docs/HANDOFF.md`
+5. Any ADR, design document, experiment report, or prompt file relevant to the task
 
 Do not rely on previous chat history when repository documentation can establish
 the current state. If chat instructions conflict with repository documents, the
 latest explicit user instruction wins; update the affected document so future
 sessions do not inherit stale decisions.
+
+`docs/RULES.md` contains the repository's comment, compilation, and documentation
+synchronization rules. Follow it together with the agent-facing requirements below.
 
 ## Project priorities
 

@@ -1,6 +1,6 @@
 # PB-RAG Prompt 管理规范
 
-本目录保存进入运行时的 Prompt。项目协作规则放在根目录 `AGENTS.md`，不要与运行时 Prompt 混在一起。
+本目录保存进入运行时的 Prompt。项目协作规则见 `docs/RULES.md`，自动化协作入口见根目录 `AGENTS.md`；不要把项目协作规则混入运行时 Prompt。
 
 ## 目录建议
 
