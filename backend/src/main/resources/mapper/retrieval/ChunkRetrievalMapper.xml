@@ -37,4 +37,27 @@
 		ORDER BY c.embedding &lt;=&gt; CAST(#{queryEmbedding} AS vector), c.id
 		LIMIT #{topK}
 	</select>
+
+	<select id="searchBm25CurrentVersions" resultMap="retrievalHitResultMap">
+		SELECT
+			c.id AS chunk_id,
+			d.id AS document_id,
+			dv.id AS document_version_id,
+			d.display_name AS document_name,
+			c.sequence_number,
+			c.content,
+			CAST(c.source_position AS text) AS source_position,
+			paradedb.score(c.id) AS similarity
+		FROM chunks c
+		JOIN document_versions dv
+		  ON dv.workspace_id = c.workspace_id AND dv.id = c.document_version_id
+		JOIN documents d
+		  ON d.workspace_id = dv.workspace_id AND d.id = dv.document_id
+		WHERE c.workspace_id = #{workspaceId}
+		  AND d.knowledge_base_id = #{knowledgeBaseId}
+		  AND d.current_version_id = dv.id
+		  AND c.content @@@ paradedb.match('content', #{query})
+		ORDER BY paradedb.score(c.id) DESC, c.id
+		LIMIT #{topK}
+	</select>
 </mapper>

@@ -3,6 +3,7 @@ package dev.pbrag.retrieval.api;
 import dev.pbrag.platform.api.ApiResponse;
 import dev.pbrag.platform.api.ApiResponses;
 import dev.pbrag.retrieval.domain.RetrievalHit;
+import dev.pbrag.retrieval.domain.RetrievalPipelineResult;
 import dev.pbrag.retrieval.service.RetrievalService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -37,6 +38,15 @@ public class RetrievalController {
 			@PathVariable UUID knowledgeBaseId,
 			@Valid @RequestBody SearchRequest input) {
 		return ApiResponses.ok(service.search(workspaceId, knowledgeBaseId, input.question()));
+	}
+
+	/** 返回同一次检索的向量、关键词、融合、重排和上下文阶段快照。 */
+	@PostMapping("/debug")
+	public ResponseEntity<ApiResponse<RetrievalPipelineResult>> debug(
+			@PathVariable UUID workspaceId,
+			@PathVariable UUID knowledgeBaseId,
+			@Valid @RequestBody SearchRequest input) {
+		return ApiResponses.ok(service.searchDetailed(workspaceId, knowledgeBaseId, input.question()));
 	}
 
 	/** 基础检索请求。 */

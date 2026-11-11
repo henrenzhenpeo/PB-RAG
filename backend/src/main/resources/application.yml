@@ -98,8 +98,18 @@ pbrag:
       batch-size: 20
   retrieval:
     embedding-dimensions: 1024
+    candidate-top-k: 30
+    fusion-top-k: 30
+    rerank-top-k: 10
     top-k: 6
+    rrf-constant: 60
     minimum-similarity: 0.2
+    rerank:
+      enabled: ${PBRAG_RERANK_ENABLED:false}
+      # 百炼业务空间专属地址，例如 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+      url: ${PBRAG_RERANK_URL:}
+      api-key: ${PBRAG_RERANK_API_KEY:${OPENAI_API_KEY:}}
+      model: ${PBRAG_RERANK_MODEL:qwen3.7-text-rerank}
   rag:
     maximum-context-characters: 12000
 

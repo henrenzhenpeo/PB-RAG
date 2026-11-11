@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="dev.pbrag.retrieval.mapper.RetrievalRunMapper">
+	<insert id="insertRun">
+		INSERT INTO retrieval_runs (
+			id, workspace_id, knowledge_base_id, question, strategy, status,
+			embedding_model, rerank_model, configuration
+		) VALUES (
+			#{id}, #{workspaceId}, #{knowledgeBaseId}, #{question}, 'HYBRID_RRF_RERANK', 'RUNNING',
+			#{embeddingModel}, #{rerankModel}, CAST(#{configuration} AS jsonb)
+		)
+	</insert>
+
+	<insert id="insertCandidate">
+		INSERT INTO retrieval_candidates (
+			id, retrieval_run_id, workspace_id, stage, chunk_id, document_id,
+			document_version_id, rank, score, metadata
+		) VALUES (
+			#{id}, #{runId}, #{workspaceId}, #{candidate.stage}, #{candidate.hit.chunkId},
+			#{candidate.hit.documentId}, #{candidate.hit.documentVersionId},
+			#{candidate.rank}, #{candidate.score}, CAST(#{metadata} AS jsonb)
+		)
+	</insert>
+
+	<update id="complete">
+		UPDATE retrieval_runs
+		SET status = 'COMPLETED', latency_ms = #{latencyMs}, completed_at = CURRENT_TIMESTAMP
+		WHERE id = #{id} AND status = 'RUNNING'
+	</update>
+
+	<update id="fail">
+		UPDATE retrieval_runs
+		SET status = 'FAILED', latency_ms = #{latencyMs}, error_code = #{errorCode},
+		    error_message = #{errorMessage}, completed_at = CURRENT_TIMESTAMP
+		WHERE id = #{id} AND status = 'RUNNING'
+	</update>
+</mapper>

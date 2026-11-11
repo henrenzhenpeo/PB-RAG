@@ -6,7 +6,7 @@ import java.util.UUID;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-/** 使用 PB-RAG 领域表执行带资源作用域的 pgvector 检索。 */
+/** 使用 PB-RAG 领域表执行带资源作用域的向量和 BM25 召回。 */
 @Mapper
 public interface ChunkRetrievalMapper {
 
@@ -19,5 +19,12 @@ public interface ChunkRetrievalMapper {
 			@Param("knowledgeBaseId") UUID knowledgeBaseId,
 			@Param("queryEmbedding") String queryEmbedding,
 			@Param("minimumSimilarity") double minimumSimilarity,
+			@Param("topK") int topK);
+
+	/** 使用 ParadeDB BM25 和中文 Lindera 分词在同一资源及当前版本范围内召回候选。 */
+	List<RetrievalHit> searchBm25CurrentVersions(
+			@Param("workspaceId") UUID workspaceId,
+			@Param("knowledgeBaseId") UUID knowledgeBaseId,
+			@Param("query") String query,
 			@Param("topK") int topK);
 }
