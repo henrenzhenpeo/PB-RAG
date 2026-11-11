@@ -29,6 +29,19 @@ import reactor.core.publisher.Flux;
 class RagChatServiceTests {
 
 	@Test
+	void loadsPromptWithWindowsLineEndingsAndUtf8Bom() throws Exception {
+		ByteArrayResource prompt = new ByteArrayResource(
+				"\uFEFF---\r\nid: test\r\n---\r\nOnly use evidence."
+						.getBytes(StandardCharsets.UTF_8));
+
+		RagChatService service = new RagChatServiceImpl(
+				mock(RetrievalService.class), mock(ChatHistoryService.class),
+				new RagCancellationRegistry(), mock(StreamingChatModel.class), prompt, 12000);
+
+		assertThat(service).isNotNull();
+	}
+
+	@Test
 	void persistsPartialAnswerAndSignalsTheActiveStreamWhenStopped() throws Exception {
 		UUID userId = UUID.randomUUID();
 		UUID workspaceId = UUID.randomUUID();

@@ -40,6 +40,7 @@ public class RagChatServiceImpl implements RagChatService {
 
 	private static final Logger log = LoggerFactory.getLogger(RagChatServiceImpl.class);
 	private static final String PROMPT_BODY_MARKER = "\n---\n";
+	private static final char UTF_8_BOM = '\uFEFF';
 	private final RetrievalService retrievalService;
 	private final ChatHistoryService historyService;
 	private final RagCancellationRegistry cancellationRegistry;
@@ -263,11 +264,18 @@ public class RagChatServiceImpl implements RagChatService {
 		return response.getResult().getOutput().getText();
 	}
 
-	/** 去除 Prompt 文件的元数据头，只把分隔线之后的运行时规则发送给模型。 */
+	/**
+	 * 去除 Prompt 文件的元数据头，只把分隔线之后的运行时规则发送给模型。
+	 * 先统一换行并移除可选 BOM，避免 Windows 检出为 CRLF 后启动失败。
+	 */
 	private static String promptBody(String promptFile) {
-		int marker = promptFile.indexOf(PROMPT_BODY_MARKER);
+		String normalized = promptFile.replace("\r\n", "\n").replace('\r', '\n');
+		if (!normalized.isEmpty() && normalized.charAt(0) == UTF_8_BOM) {
+			normalized = normalized.substring(1);
+		}
+		int marker = normalized.indexOf(PROMPT_BODY_MARKER);
 		if (marker < 0) throw new IllegalStateException("RAG prompt metadata separator is missing");
-		String body = promptFile.substring(marker + PROMPT_BODY_MARKER.length()).strip();
+		String body = normalized.substring(marker + PROMPT_BODY_MARKER.length()).strip();
 		if (body.isEmpty()) throw new IllegalStateException("RAG prompt body is empty");
 		return body;
 	}
