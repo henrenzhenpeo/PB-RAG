@@ -9,6 +9,7 @@ import dev.pbrag.knowledge.domain.DocumentVersion;
 import dev.pbrag.knowledge.mapper.DocumentMapper;
 import dev.pbrag.knowledge.mapper.DocumentVersionMapper;
 import dev.pbrag.knowledge.mapper.KnowledgeBaseMapper;
+import dev.pbrag.platform.api.InvalidRequestException;
 import dev.pbrag.platform.api.ResourceNotFoundException;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -81,6 +82,42 @@ public class IngestionCreationServiceImpl implements IngestionCreationService {
 		log.info(
 				"ingestion_job_created workspaceId={} knowledgeBaseId={} documentId={} documentVersionId={} jobId={} contentSha256={}",
 				workspaceId, knowledgeBaseId, documentId, versionId, persistedJob.id(), shortHash(contentSha256));
+		return new IngestionCreationResult(documentId, versionId, persistedJob, false);
+	}
+
+	/** 锁定逻辑文档后分配递增版本号；当前版本只由入库成功事务切换。 */
+	@Override
+	@Transactional
+	public IngestionCreationResult createVersion(
+			UUID workspaceId, UUID knowledgeBaseId, UUID documentId, String mediaType,
+			String contentSha256, String storageKey) {
+		Document document = documentMapper.lockByScope(workspaceId, knowledgeBaseId, documentId);
+		if (document == null) throw new ResourceNotFoundException("Document not found");
+		if (!document.mediaType().equals(mediaType)) {
+			throw new InvalidRequestException("A document version must keep the original media type");
+		}
+
+		DocumentVersion existing = versionMapper.selectByDocumentAndHash(
+				workspaceId, documentId, contentSha256);
+		if (existing != null) {
+			IngestionJob job = jobMapper.selectByDocumentVersionId(existing.id());
+			return new IngestionCreationResult(documentId, existing.id(), job, true);
+		}
+
+		Integer maximumVersion = versionMapper.selectMaximumVersionNumber(workspaceId, documentId);
+		int versionNumber = maximumVersion == null ? 1 : maximumVersion + 1;
+		UUID versionId = UUID.randomUUID();
+		DocumentVersion version = new DocumentVersion(
+				versionId, workspaceId, documentId, versionNumber, contentSha256, storageKey);
+		IngestionJob job = new IngestionJob(UUID.randomUUID(), workspaceId, versionId);
+		versionMapper.insert(version);
+		jobMapper.insert(job);
+		IngestionJob persistedJob = jobMapper.selectByWorkspaceIdAndId(workspaceId, job.id());
+		if (persistedJob == null) throw new IllegalStateException("Failed to reload the created ingestion job");
+		log.info(
+				"ingestion_version_created workspaceId={} knowledgeBaseId={} documentId={} documentVersionId={} versionNumber={} jobId={} contentSha256={}",
+				workspaceId, knowledgeBaseId, documentId, versionId, versionNumber,
+				persistedJob.id(), shortHash(contentSha256));
 		return new IngestionCreationResult(documentId, versionId, persistedJob, false);
 	}
 

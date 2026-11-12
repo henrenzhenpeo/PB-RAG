@@ -41,6 +41,11 @@ const router = createRouter({
           component: () => import('@/views/chat/ChatView.vue'),
         },
         {
+          path: 'knowledge-bases/:kbId/retrieval-debug',
+          name: 'retrieval-debug',
+          component: () => import('@/views/retrieval/RetrievalDebugView.vue'),
+        },
+        {
           path: 'chats/:chatId',
           name: 'chat',
           component: () => import('@/views/chat/ChatView.vue'),

@@ -6,12 +6,13 @@ import dev.pbrag.ingestion.parser.ParsedBlock;
 import dev.pbrag.ingestion.parser.ParsedDocument;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class MarkdownHeadingChunkingStrategyTests {
 
 	@Test
 	void startsANewChunkWhenHeadingChanges() {
-		var strategy = new MarkdownHeadingChunkingStrategy(1000, 1500);
+		var strategy = strategy(1000, 1500);
 		var document = new ParsedDocument("test", List.of(
 				new ParsedBlock("# A", "A", 0, 3, 1, 1),
 				new ParsedBlock("内容 A", "A", 5, 9, 3, 3),
@@ -28,7 +29,7 @@ class MarkdownHeadingChunkingStrategyTests {
 
 	@Test
 	void splitsAnOversizedBlockDeterministically() {
-		var strategy = new MarkdownHeadingChunkingStrategy(100, 120);
+		var strategy = strategy(100, 120);
 		String text = "x".repeat(250);
 		var document = new ParsedDocument("test", List.of(
 				new ParsedBlock(text, "Large", 10, 260, 2, 5)));
@@ -38,5 +39,13 @@ class MarkdownHeadingChunkingStrategyTests {
 		assertThat(chunks).hasSize(3);
 		assertThat(chunks).extracting(chunk -> chunk.content().length()).containsExactly(120, 120, 10);
 		assertThat(chunks.getLast().endOffset()).isEqualTo(260);
+	}
+
+	private static MarkdownHeadingChunkingStrategy strategy(int targetCharacters, int maximumCharacters) {
+		MarkdownHeadingChunkingStrategy strategy = new MarkdownHeadingChunkingStrategy();
+		ReflectionTestUtils.setField(strategy, "targetCharacters", targetCharacters);
+		ReflectionTestUtils.setField(strategy, "maximumCharacters", maximumCharacters);
+		strategy.validateConfiguration();
+		return strategy;
 	}
 }

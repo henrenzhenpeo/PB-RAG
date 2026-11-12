@@ -26,7 +26,7 @@ spring:
     redis:
       host: ${PBRAG_REDIS_HOST:116.62.53.31}
       port: ${PBRAG_REDIS_PORT:6379}
-      password: ${PBRAG_REDIS_PASSWORD}
+      password: ${PBRAG_REDIS_PASSWORD:}
   flyway:
     enabled: true
   servlet:
@@ -84,6 +84,11 @@ pbrag:
       root: ${PBRAG_STORAGE_ROOT:./data/objects}
   ingestion:
     max-file-size: 5242880
+    redis-signals:
+      # Redis 只加速唤醒与取消传播；关闭或不可用时 PostgreSQL 定时轮询保持正确性。
+      enabled: ${PBRAG_INGESTION_REDIS_SIGNALS_ENABLED:true}
+      initial-delay-ms: 1000
+      reconnect-delay-ms: 10000
     chunking:
       target-characters: 1000
       maximum-characters: 1500

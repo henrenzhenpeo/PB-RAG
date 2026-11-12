@@ -92,5 +92,3 @@ public class BailianRerankClient implements RerankClient {
 	private record Output(List<Result> results) { }
 	private record Result(int index, double relevance_score) { }
 }
-import java.time.Duration;
-import java.util.Comparator;

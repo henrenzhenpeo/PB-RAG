@@ -13,8 +13,11 @@ import dev.pbrag.ingestion.parser.UnsupportedDocumentTypeException;
 import dev.pbrag.ingestion.storage.ObjectStorage;
 import dev.pbrag.knowledge.domain.DocumentVersion;
 import dev.pbrag.knowledge.mapper.DocumentVersionMapper;
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.ConnectException;
 import java.net.InetAddress;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -25,6 +28,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 
 /**
  * 异步文档入库 Worker，串联任务领取、解析、分块、Embedding、索引完成与失败重试。
@@ -42,6 +47,8 @@ public class IngestionWorker {
 	private final DocumentParserRegistry parserRegistry;
 	private final ChunkingStrategy chunkingStrategy;
 	private final ChunkPersistenceService chunkPersistence;
+	private final IngestionCompletionService completionService;
+	private final IngestionSignalService signalService;
 	private final EmbeddingModel embeddingModel;
 	private final String workerId;
 	private final long leaseSeconds;
@@ -57,6 +64,8 @@ public class IngestionWorker {
 			DocumentParserRegistry parserRegistry,
 			ChunkingStrategy chunkingStrategy,
 			ChunkPersistenceService chunkPersistence,
+			IngestionCompletionService completionService,
+			IngestionSignalService signalService,
 			EmbeddingModel embeddingModel,
 			@Value("${pbrag.ingestion.worker.id:}") String configuredWorkerId,
 			@Value("${pbrag.ingestion.worker.lease-seconds:300}") long leaseSeconds,
@@ -70,6 +79,8 @@ public class IngestionWorker {
 		this.parserRegistry = parserRegistry;
 		this.chunkingStrategy = chunkingStrategy;
 		this.chunkPersistence = chunkPersistence;
+		this.completionService = completionService;
+		this.signalService = signalService;
 		this.embeddingModel = embeddingModel;
 		this.workerId = configuredWorkerId.isBlank() ? defaultWorkerId() : configuredWorkerId;
 		this.leaseSeconds = leaseSeconds;
@@ -89,11 +100,12 @@ public class IngestionWorker {
 
 	/**
 	 * 按状态机顺序执行完整管线；每次阶段推进都校验 Worker 租约，失去所有权后立即停止。
-	 * 所有异常统一转换为稳定错误码并交由数据库决定重试或最终失败。
+	 * 异常先转换为稳定错误码和可重试性，再由带租约条件的数据库更新决定是否真正落库。
 	 */
 	private void process(IngestionJob job) {
 		IngestionJobState state = new IngestionJobState(job.status(), job.stage());
 		try {
+			ensureNotCancelled(job.id());
 			DocumentVersion version = versionMapper.selectById(job.documentVersionId());
 			if (version == null || !job.workspaceId().equals(version.workspaceId())) {
 				throw new IllegalStateException("Document version is missing or outside the job workspace");
@@ -104,11 +116,17 @@ public class IngestionWorker {
 				parsed = parser.parse(input);
 			}
 			versionMapper.updateParserVersion(job.workspaceId(), version.id(), parsed.parserVersion());
+			ensureNotCancelled(job.id());
 			state = advance(job.id(), state, IngestionJobAction.START_CHUNKING);
 
 			List<ChunkDraft> chunks = chunkingStrategy.split(parsed);
 			if (chunks.isEmpty()) throw new IllegalArgumentException("Document produced no chunks");
+			ensureNotCancelled(job.id());
+			if (jobMapper.renewLease(job.id(), workerId, state.stage(), leaseSeconds) != 1) {
+				throw new IllegalStateException("Job lease was lost before chunk persistence");
+			}
 			chunkPersistence.replace(job.workspaceId(), version.id(), chunks, chunkingStrategy.version());
+			ensureNotCancelled(job.id());
 			state = advance(job.id(), state, IngestionJobAction.START_EMBEDDING);
 
 			List<float[]> embeddings = embedInBatches(job.id(), state, chunks);
@@ -116,20 +134,32 @@ public class IngestionWorker {
 			state = advance(job.id(), state, IngestionJobAction.START_INDEXING);
 
 			state.apply(IngestionJobAction.COMPLETE);
-			if (jobMapper.complete(job.id(), workerId) != 1) {
-				throw new IllegalStateException("Job lease was lost before completion");
-			}
+			completionService.complete(job.id(), workerId, job.workspaceId(), version.documentId(), version.id());
 			log.info("ingestion_job_completed workspaceId={} documentVersionId={} jobId={} chunks={}",
 					job.workspaceId(), version.id(), job.id(), chunks.size());
 		}
 		catch (Exception exception) {
-			String code = errorCode(exception);
+			if (exception instanceof IngestionCancelledException) {
+				log.info("ingestion_job_cancelled workspaceId={} documentVersionId={} jobId={}",
+						job.workspaceId(), job.documentVersionId(), job.id());
+				return;
+			}
+			IngestionFailure failure = classify(exception);
+			String code = failure.code();
 			String message = safeMessage(exception);
-			IngestionJobAction failureAction = job.attemptCount() < job.maxAttempts()
+			boolean retry = failure.retryable() && job.attemptCount() < job.maxAttempts();
+			IngestionJobAction failureAction = retry
 					? IngestionJobAction.WAIT_FOR_RETRY : IngestionJobAction.FAIL;
 			state.apply(failureAction);
-			jobMapper.failOrRetry(job.id(), workerId, code, message, state.stage(), retryDelaySeconds);
-			log.warn("ingestion_job_failed workspaceId={} documentVersionId={} jobId={} errorCode={} message={}",
+			int updated = jobMapper.failOrRetry(
+					job.id(), workerId, code, message, state.stage(), failure.retryable(), retryDelaySeconds);
+			if (updated != 1) {
+				log.warn("ingestion_job_failure_not_persisted workspaceId={} documentVersionId={} jobId={} errorCode={} reason=lease_lost",
+						job.workspaceId(), job.documentVersionId(), job.id(), code);
+				return;
+			}
+			log.warn("{} workspaceId={} documentVersionId={} jobId={} errorCode={} message={}",
+					retry ? "ingestion_job_retry_scheduled" : "ingestion_job_failed",
 					job.workspaceId(), job.documentVersionId(), job.id(), code, message);
 		}
 	}
@@ -139,6 +169,7 @@ public class IngestionWorker {
 			UUID jobId, IngestionJobState state, List<ChunkDraft> chunks) {
 		List<float[]> embeddings = new ArrayList<>(chunks.size());
 		for (int start = 0; start < chunks.size(); start += embeddingBatchSize) {
+			ensureNotCancelled(jobId);
 			if (jobMapper.renewLease(jobId, workerId, state.stage(), leaseSeconds) != 1) {
 				throw new IllegalStateException("Job lease was lost during embedding");
 			}
@@ -149,6 +180,12 @@ public class IngestionWorker {
 		return embeddings;
 	}
 
+	private void ensureNotCancelled(UUID jobId) {
+		if (signalService.cancellationRequested(jobId)) throw new IngestionCancelledException();
+	}
+
+	private static final class IngestionCancelledException extends RuntimeException { }
+
 	private IngestionJobState advance(
 			UUID jobId, IngestionJobState current, IngestionJobAction action) {
 		IngestionJobState next = current.apply(action);
@@ -158,13 +195,35 @@ public class IngestionWorker {
 		return next;
 	}
 
-	private static String errorCode(Exception exception) {
-		if (exception instanceof UnsupportedDocumentTypeException) return "UNSUPPORTED_DOCUMENT_TYPE";
-		if (exception instanceof EmbeddingDimensionMismatchException) return "EMBEDDING_DIMENSION_MISMATCH";
-		if (exception instanceof java.io.IOException) return "DOCUMENT_READ_FAILED";
-		if (exception instanceof IllegalArgumentException) return "DOCUMENT_PARSE_FAILED";
-		return "INGESTION_FAILED";
+	static IngestionFailure classify(Exception exception) {
+		if (exception instanceof UnsupportedDocumentTypeException) {
+			return new IngestionFailure("UNSUPPORTED_DOCUMENT_TYPE", false);
+		}
+		if (exception instanceof EmbeddingDimensionMismatchException) {
+			return new IngestionFailure("EMBEDDING_DIMENSION_MISMATCH", false);
+		}
+		if (exception instanceof IllegalArgumentException) {
+			return new IngestionFailure("DOCUMENT_PARSE_FAILED", false);
+		}
+		for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+			if (cause instanceof HttpStatusCodeException statusException) {
+				boolean retryable = statusException.getStatusCode().value() == 429
+						|| statusException.getStatusCode().is5xxServerError();
+				return new IngestionFailure(
+						retryable ? "EMBEDDING_PROVIDER_UNAVAILABLE" : "EMBEDDING_REQUEST_REJECTED",
+						retryable);
+			}
+			if (cause instanceof ResourceAccessException
+					|| cause instanceof SocketTimeoutException || cause instanceof ConnectException) {
+				return new IngestionFailure("EMBEDDING_PROVIDER_UNAVAILABLE", true);
+			}
+		}
+		if (exception instanceof IOException) return new IngestionFailure("DOCUMENT_READ_FAILED", true);
+		return new IngestionFailure("INGESTION_FAILED", true);
 	}
+
+	/** Worker 可持久化的稳定错误分类；retryable 不依赖自然语言消息。 */
+	record IngestionFailure(String code, boolean retryable) { }
 
 	/** 限制持久化错误文本长度，避免第三方异常撑大任务表或意外写入大段文档内容。 */
 	private static String safeMessage(Exception exception) {

@@ -71,10 +71,36 @@ export async function uploadDocument(
   return response.data.data
 }
 
+/** 为已有逻辑文档上传新内容版本；旧版本在新任务完成前继续参与检索。 */
+export async function uploadDocumentVersion(
+  workspaceId: string,
+  knowledgeBaseId: string,
+  documentId: string,
+  file: File,
+): Promise<UploadDocumentResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await http.post<ApiResponse<UploadDocumentResult>>(
+    `/workspaces/${workspaceId}/knowledge-bases/${knowledgeBaseId}/documents/${documentId}/versions`,
+    form,
+  )
+  if (!response.data.data) throw new Error('后端未返回版本上传结果')
+  return response.data.data
+}
+
 export async function getIngestionJob(workspaceId: string, jobId: string): Promise<IngestionJob> {
   const response = await http.get<ApiResponse<IngestionJob>>(
     `/workspaces/${workspaceId}/ingestion-jobs/${jobId}`,
   )
   if (!response.data.data) throw new Error('后端未返回入库任务')
+  return response.data.data
+}
+
+/** 主动取消未完成的入库任务，并返回数据库中的取消终态。 */
+export async function cancelIngestionJob(workspaceId: string, jobId: string): Promise<IngestionJob> {
+  const response = await http.post<ApiResponse<IngestionJob>>(
+    `/workspaces/${workspaceId}/ingestion-jobs/${jobId}/cancel`,
+  )
+  if (!response.data.data) throw new Error('后端未返回取消结果')
   return response.data.data
 }

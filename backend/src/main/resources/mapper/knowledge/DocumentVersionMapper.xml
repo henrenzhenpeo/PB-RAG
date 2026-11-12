@@ -26,6 +26,23 @@
 		LIMIT 1
 	</select>
 
+	<select id="selectByDocumentAndHash" resultMap="documentVersionResultMap">
+		SELECT id, workspace_id, document_id, version_number,
+		       content_sha256, storage_key, parser_version, created_at
+		FROM document_versions
+		WHERE workspace_id = #{workspaceId}
+		  AND document_id = #{documentId}
+		  AND content_sha256 = #{contentSha256}
+		LIMIT 1
+	</select>
+
+	<select id="selectMaximumVersionNumber" resultType="java.lang.Integer">
+		SELECT MAX(version_number)
+		FROM document_versions
+		WHERE workspace_id = #{workspaceId}
+		  AND document_id = #{documentId}
+	</select>
+
 	<update id="updateParserVersion">
 		UPDATE document_versions
 		SET parser_version = #{parserVersion}

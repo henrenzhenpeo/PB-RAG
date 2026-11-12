@@ -8,4 +8,8 @@ public interface DocumentUploadService {
 
 	/** 校验并存储上传内容，然后创建或复用对应的异步入库任务。 */
 	DocumentUploadResult upload(UUID workspaceId, UUID knowledgeBaseId, MultipartFile file);
+
+	/** 校验并存储新内容，然后为已有逻辑文档创建下一版本的入库任务。 */
+	DocumentUploadResult uploadVersion(
+			UUID workspaceId, UUID knowledgeBaseId, UUID documentId, MultipartFile file);
 }

@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { getKnowledgeBase, type KnowledgeBase } from '@/api/knowledgeBases'
 import { errorMessage } from '@/api/http'
-import { getIngestionJob, listDocuments, uploadDocument, type IngestionJob, type IngestionStage, type KnowledgeDocument } from '@/api/ingestion'
+import { cancelIngestionJob, getIngestionJob, listDocuments, uploadDocument, uploadDocumentVersion, type IngestionJob, type IngestionStage, type KnowledgeDocument } from '@/api/ingestion'
 import { formatDateTime } from '@/utils/dateTime'
 
 const route = useRoute()
@@ -16,6 +16,8 @@ const documents = ref<KnowledgeDocument[]>([])
 const loading = ref(false)
 const uploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const versionFileInput = ref<HTMLInputElement | null>(null)
+const versionDocumentId = ref<string | null>(null)
 const search = ref('')
 const filteredDocuments = computed(() => documents.value.filter((item) => item.displayName.toLowerCase().includes(search.value.trim().toLowerCase())))
 const activeCount = computed(() => documents.value.filter((item) => item.ingestionJob && !isTerminal(item.ingestionJob)).length)
@@ -50,6 +52,10 @@ async function load() {
 }
 
 function selectFile() { fileInput.value?.click() }
+function selectVersionFile(documentId: string) {
+  versionDocumentId.value = documentId
+  versionFileInput.value?.click()
+}
 
 async function handleFile(event: Event) {
   const input = event.target as HTMLInputElement
@@ -69,6 +75,37 @@ async function handleFile(event: Event) {
   }
 }
 
+async function handleVersionFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const documentId = versionDocumentId.value
+  versionDocumentId.value = null
+  if (!file || !documentId) return
+  uploading.value = true
+  try {
+    const result = await uploadDocumentVersion(workspaceId.value, kbId.value, documentId, file)
+    const document = documents.value.find((item) => item.id === documentId)
+    if (document) document.ingestionJob = result.job
+    void MessagePlugin.success(result.duplicate ? '该内容版本已存在' : '新版本已创建，完成入库后自动切换')
+    ensurePolling()
+  } catch (error) {
+    void MessagePlugin.error(errorMessage(error))
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function cancelJob(document: KnowledgeDocument) {
+  if (!document.ingestionJob || isTerminal(document.ingestionJob)) return
+  try {
+    document.ingestionJob = await cancelIngestionJob(workspaceId.value, document.ingestionJob.id)
+    void MessagePlugin.success('入库任务已取消')
+  } catch (error) {
+    void MessagePlugin.error(errorMessage(error))
+  }
+}
+
 function isTerminal(job: IngestionJob) {
   return ['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status)
 }
@@ -85,15 +122,19 @@ async function pollJobs() {
     stopPolling()
     return
   }
+  let versionSwitched = false
   await Promise.all(active.map(async (document) => {
     try {
       if (document.ingestionJob) {
+        const previousStatus = document.ingestionJob.status
         document.ingestionJob = await getIngestionJob(workspaceId.value, document.ingestionJob.id)
+        if (previousStatus !== 'COMPLETED' && document.ingestionJob.status === 'COMPLETED') versionSwitched = true
       }
     } catch {
       // 临时网络错误留到下一轮重试，不把任务错误误判为失败。
     }
   }))
+  if (versionSwitched) documents.value = await listDocuments(workspaceId.value, kbId.value)
 }
 
 function ensurePolling() {
@@ -120,6 +161,7 @@ onBeforeUnmount(stopPolling)
         <header>
           <div><span class="eyebrow">KNOWLEDGE BASE</span><h1>{{ knowledgeBase.name }}</h1><p>{{ knowledgeBase.description || '管理文档与入库状态' }}</p></div>
           <div class="header-actions">
+            <router-link :to="`/workspaces/${workspaceId}/knowledge-bases/${kbId}/retrieval-debug`"><t-button variant="outline">检索调试</t-button></router-link>
             <t-button theme="primary" :loading="uploading" @click="selectFile">上传文档</t-button>
           </div>
         </header>
@@ -133,6 +175,7 @@ onBeforeUnmount(stopPolling)
         <t-card class="document-card">
           <div class="section-heading"><div><h2>文档</h2><p>查看当前版本与入库进度</p></div><t-input v-model="search" class="search" placeholder="搜索文档名称" clearable /></div>
             <input ref="fileInput" class="file-input" type="file" accept=".md,.pdf,text/markdown,text/plain,application/pdf" @change="handleFile" />
+            <input ref="versionFileInput" class="file-input" type="file" accept=".md,.pdf,text/markdown,text/plain,application/pdf" @change="handleVersionFile" />
 
           <div v-if="filteredDocuments.length" class="documents">
             <article v-for="document in filteredDocuments" :key="document.id" class="document">
@@ -141,10 +184,14 @@ onBeforeUnmount(stopPolling)
                   <strong>{{ document.displayName }}</strong>
                   <p>版本 v{{ document.currentVersion.versionNumber }} · 上传于 {{ formatDateTime(document.createdAt) }}</p>
                 </div>
-                <t-tag v-if="document.ingestionJob" :theme="document.ingestionJob.status === 'FAILED' ? 'danger' : document.ingestionJob.status === 'COMPLETED' ? 'success' : 'primary'" variant="light">
-                  {{ document.ingestionJob.status }}
-                </t-tag>
-                <t-tag v-else theme="warning" variant="light">任务缺失</t-tag>
+                <div class="document-actions">
+                  <t-button size="small" variant="outline" :loading="uploading" @click="selectVersionFile(document.id)">上传新版本</t-button>
+                  <t-button v-if="document.ingestionJob && !isTerminal(document.ingestionJob)" size="small" theme="danger" variant="text" @click="cancelJob(document)">取消任务</t-button>
+                  <t-tag v-if="document.ingestionJob" :theme="document.ingestionJob.status === 'FAILED' || document.ingestionJob.status === 'CANCELLED' ? 'danger' : document.ingestionJob.status === 'COMPLETED' ? 'success' : 'primary'" variant="light">
+                    {{ document.ingestionJob.status }}
+                  </t-tag>
+                </div>
+                <t-tag v-if="!document.ingestionJob" theme="warning" variant="light">任务缺失</t-tag>
               </div>
 
               <template v-if="document.ingestionJob">
@@ -188,6 +235,7 @@ header p { margin: 0; color: var(--td-text-color-secondary); }
 .documents { display: grid; }
 .document { padding: 18px 2px; border-top: 1px solid var(--td-component-border); }
 .document-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.document-actions { display: flex; align-items: center; gap: 8px; }
 .document-heading p, .stage { margin: 6px 0 12px; color: var(--td-text-color-secondary); }
 .document code { display: block; margin-top: 10px; color: var(--td-text-color-placeholder); overflow-wrap: anywhere; }
 .metadata { margin-top: 10px; font-size: 12px; color: var(--td-text-color-placeholder); }

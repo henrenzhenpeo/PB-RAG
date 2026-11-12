@@ -4,6 +4,7 @@ import dev.pbrag.ingestion.service.DocumentUploadResult;
 import dev.pbrag.ingestion.service.DocumentUploadService;
 import dev.pbrag.ingestion.service.IngestionCreationResult;
 import dev.pbrag.ingestion.service.IngestionCreationService;
+import dev.pbrag.ingestion.service.IngestionSignalService;
 import dev.pbrag.ingestion.storage.ObjectStorage;
 import dev.pbrag.ingestion.storage.StoredObject;
 import dev.pbrag.platform.api.InvalidRequestException;
@@ -33,20 +34,35 @@ public class DocumentUploadServiceImpl implements DocumentUploadService {
 
 	private final ObjectStorage storage;
 	private final IngestionCreationService creationService;
+	private final IngestionSignalService signalService;
 	private final long maximumBytes;
 
 	public DocumentUploadServiceImpl(
 			ObjectStorage storage,
 			IngestionCreationService creationService,
+			IngestionSignalService signalService,
 			@Value("${pbrag.ingestion.max-file-size:5242880}") long maximumBytes) {
 		this.storage = storage;
 		this.creationService = creationService;
+		this.signalService = signalService;
 		this.maximumBytes = maximumBytes;
 	}
 
 	/** 对象存储与数据库无法组成分布式事务，因此显式采用“先存储、失败补偿”策略。 */
 	@Override
 	public DocumentUploadResult upload(UUID workspaceId, UUID knowledgeBaseId, MultipartFile file) {
+		return storeAndCreate(workspaceId, knowledgeBaseId, null, file);
+	}
+
+	/** 新版本复用上传校验、对象存储和补偿语义，仅改变事务创建目标。 */
+	@Override
+	public DocumentUploadResult uploadVersion(
+			UUID workspaceId, UUID knowledgeBaseId, UUID documentId, MultipartFile file) {
+		return storeAndCreate(workspaceId, knowledgeBaseId, documentId, file);
+	}
+
+	private DocumentUploadResult storeAndCreate(
+			UUID workspaceId, UUID knowledgeBaseId, UUID documentId, MultipartFile file) {
 		String filename = validate(file);
 		StoredObject stored;
 		try (InputStream input = file.getInputStream()) {
@@ -59,17 +75,23 @@ public class DocumentUploadServiceImpl implements DocumentUploadService {
 		try {
 			String mediaType = filename.toLowerCase(Locale.ROOT).endsWith(".pdf")
 					? "application/pdf" : "text/markdown";
-			IngestionCreationResult created = creationService.create(
-					workspaceId, knowledgeBaseId, filename, mediaType, stored.sha256(), stored.key());
+			IngestionCreationResult created = documentId == null
+					? creationService.create(
+							workspaceId, knowledgeBaseId, filename, mediaType, stored.sha256(), stored.key())
+					: creationService.createVersion(
+							workspaceId, knowledgeBaseId, documentId, mediaType,
+							stored.sha256(), stored.key());
 			if (created.job() == null) {
 				throw new IllegalStateException("Existing document version has no ingestion job");
 			}
 			if (created.duplicate()) {
 				deleteQuietly(stored.key());
 			}
-			return new DocumentUploadResult(
+			DocumentUploadResult result = new DocumentUploadResult(
 					created.documentId(), created.documentVersionId(), created.job(),
 					stored.sha256(), created.duplicate());
+			if (!created.duplicate()) signalService.notifyJobAvailable(created.job().id());
+			return result;
 		}
 		catch (RuntimeException exception) {
 			deleteQuietly(stored.key());

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 查询知识库文档及其当前版本、入库任务状态的 API。 */
+/** 查询知识库文档、当前生产版本及最新版本入库任务状态的 API。 */
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/documents")
 public class DocumentController {
@@ -25,7 +25,7 @@ public class DocumentController {
 		this.service = service;
 	}
 
-	/** 查询指定 Workspace 和知识库中的文档、当前版本及入库任务状态。 */
+	/** 查询指定 Workspace 和知识库中的文档、当前生产版本及最新版本入库任务状态。 */
 	@GetMapping
 	public ResponseEntity<ApiResponse<List<DocumentResponse>>> list(
 			@PathVariable UUID workspaceId,

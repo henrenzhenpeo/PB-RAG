@@ -9,4 +9,11 @@ public interface IngestionCreationService {
 	IngestionCreationResult create(
 			UUID workspaceId, UUID knowledgeBaseId, String displayName, String mediaType,
 			String contentSha256, String storageKey);
+
+	/** 为已有逻辑文档原子创建下一不可变版本；重复内容复用已有版本及任务。 */
+	default IngestionCreationResult createVersion(
+			UUID workspaceId, UUID knowledgeBaseId, UUID documentId, String mediaType,
+			String contentSha256, String storageKey) {
+		throw new UnsupportedOperationException("Document version creation is not implemented");
+	}
 }

@@ -45,13 +45,14 @@ public interface IngestionJobMapper extends BaseMapper<IngestionJob> {
 	/** 将当前 Worker 持有的任务原子标记为完成。 */
 	int complete(@Param("id") UUID id, @Param("workerId") String workerId);
 
-	/** 根据尝试次数将失败任务转为延迟重试或最终失败。 */
+	/** 根据错误分类与尝试次数将失败任务转为延迟重试或最终失败。 */
 	int failOrRetry(
 			@Param("id") UUID id,
 			@Param("workerId") String workerId,
 			@Param("errorCode") String errorCode,
 			@Param("errorMessage") String errorMessage,
 			@Param("expectedStage") IngestionStage expectedStage,
+			@Param("retryable") boolean retryable,
 			@Param("retryDelaySeconds") long retryDelaySeconds);
 
 	/** 回收租约已过期的运行中任务并安排重试。 */
@@ -59,4 +60,9 @@ public interface IngestionJobMapper extends BaseMapper<IngestionJob> {
 
 	/** 将等待时间已到的重试任务恢复为可领取状态。 */
 	int makeRetriesAvailable();
+
+	/** 在 Workspace 作用域内取消未进入终态的任务，并清除可能存在的租约。 */
+	int cancel(
+			@Param("workspaceId") UUID workspaceId,
+			@Param("id") UUID id);
 }

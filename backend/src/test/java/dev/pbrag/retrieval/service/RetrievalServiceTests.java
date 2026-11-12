@@ -30,9 +30,9 @@ class RetrievalServiceTests {
 	@Test
 	void fusesVectorAndKeywordRanksAndKeepsOneCandidatePerChunk() {
 		Fixture fixture = new Fixture();
-		RetrievalHit shared = hit(0.90);
+		RetrievalHit shared = hit(1.2);
 		RetrievalHit vectorOnly = hit(0.80);
-		RetrievalHit keywordOnly = hit(0.95);
+		RetrievalHit keywordOnly = hit(1.5);
 		when(fixture.embeddingModel.embed("如何访问接口？")).thenReturn(new float[] { 0.25f, -0.5f, 0.75f });
 		when(fixture.mapper.searchCurrentVersions(fixture.workspaceId, fixture.knowledgeBaseId,
 				"[0.25,-0.5,0.75]", 0.2, 30)).thenReturn(List.of(shared, vectorOnly));

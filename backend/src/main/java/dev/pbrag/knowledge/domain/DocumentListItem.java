@@ -5,7 +5,7 @@ import dev.pbrag.ingestion.domain.IngestionStage;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-/** 知识库文档列表的只读投影，包含当前版本及其入库任务。 */
+/** 知识库文档列表的只读投影，包含当前生产版本及逻辑文档最新版本的入库任务。 */
 public class DocumentListItem {
 
 	private UUID documentId;

@@ -2,6 +2,7 @@ package dev.pbrag.ingestion.chunking;
 
 import dev.pbrag.ingestion.parser.ParsedBlock;
 import dev.pbrag.ingestion.parser.ParsedDocument;
+import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,17 +15,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class MarkdownHeadingChunkingStrategy implements ChunkingStrategy {
 
-	private final int targetCharacters;
-	private final int maximumCharacters;
+	@Value("${pbrag.ingestion.chunking.target-characters}")
+	private int targetCharacters;
 
-	public MarkdownHeadingChunkingStrategy(
-			@Value("${pbrag.ingestion.chunking.target-characters:1000}") int targetCharacters,
-			@Value("${pbrag.ingestion.chunking.maximum-characters:1500}") int maximumCharacters) {
+	@Value("${pbrag.ingestion.chunking.maximum-characters}")
+	private int maximumCharacters;
+
+	/** 配置注入完成后校验分块边界，错误配置必须阻止应用启动。 */
+	@PostConstruct
+	void validateConfiguration() {
 		if (targetCharacters < 100 || maximumCharacters < targetCharacters) {
 			throw new IllegalArgumentException("Invalid chunk size configuration");
 		}
-		this.targetCharacters = targetCharacters;
-		this.maximumCharacters = maximumCharacters;
 	}
 
 	/** 相同解析结果和配置必须产生相同序号、内容与来源范围，支持幂等重建。 */

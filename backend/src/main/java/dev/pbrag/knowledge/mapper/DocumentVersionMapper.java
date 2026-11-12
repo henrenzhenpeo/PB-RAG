@@ -16,6 +16,17 @@ public interface DocumentVersionMapper extends BaseMapper<DocumentVersion> {
 			@Param("knowledgeBaseId") UUID knowledgeBaseId,
 			@Param("contentSha256") String contentSha256);
 
+	/** 查询同一逻辑文档中内容相同的不可变版本。 */
+	DocumentVersion selectByDocumentAndHash(
+			@Param("workspaceId") UUID workspaceId,
+			@Param("documentId") UUID documentId,
+			@Param("contentSha256") String contentSha256);
+
+	/** 返回逻辑文档当前最大的版本号；调用方必须先锁定文档行。 */
+	Integer selectMaximumVersionNumber(
+			@Param("workspaceId") UUID workspaceId,
+			@Param("documentId") UUID documentId);
+
 	/** 记录生成该版本解析结果的解析器版本。 */
 	int updateParserVersion(
 			@Param("workspaceId") UUID workspaceId,

@@ -79,7 +79,7 @@
 
 	<update id="failOrRetry">
 		UPDATE ingestion_jobs
-		SET status = CASE WHEN attempt_count &lt; max_attempts THEN 'RETRY_WAIT' ELSE 'FAILED' END,
+		SET status = CASE WHEN #{retryable} AND attempt_count &lt; max_attempts THEN 'RETRY_WAIT' ELSE 'FAILED' END,
 		    available_at = CURRENT_TIMESTAMP + (#{retryDelaySeconds} * INTERVAL '1 second'),
 		    lease_owner = NULL, lease_expires_at = NULL,
 		    error_code = #{errorCode}, error_message = #{errorMessage}, updated_at = CURRENT_TIMESTAMP
@@ -101,5 +101,14 @@
 		UPDATE ingestion_jobs
 		SET status = 'PENDING', stage = 'PENDING', updated_at = CURRENT_TIMESTAMP
 		WHERE status = 'RETRY_WAIT' AND available_at &lt;= CURRENT_TIMESTAMP
+	</update>
+
+	<update id="cancel">
+		UPDATE ingestion_jobs
+		SET status = 'CANCELLED', lease_owner = NULL, lease_expires_at = NULL,
+		    error_code = 'CLIENT_CANCELLED', error_message = 'Ingestion cancelled by user',
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{id}
+		  AND status IN ('PENDING', 'RUNNING', 'RETRY_WAIT')
 	</update>
 </mapper>

@@ -48,12 +48,36 @@ public class IngestionController {
 				response);
 	}
 
+	/** 为已有逻辑文档上传新内容版本，并返回独立的异步入库任务。 */
+	@PostMapping("/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions")
+	public ResponseEntity<ApiResponse<UploadResponse>> uploadVersion(
+			@PathVariable UUID workspaceId,
+			@PathVariable UUID knowledgeBaseId,
+			@PathVariable UUID documentId,
+			@RequestPart("file") MultipartFile file) {
+		DocumentUploadResult result = uploadService.uploadVersion(
+				workspaceId, knowledgeBaseId, documentId, file);
+		UploadResponse response = UploadResponse.from(result);
+		if (result.duplicate()) return ApiResponses.ok(response);
+		return ApiResponses.created(
+				URI.create("/api/workspaces/" + workspaceId + "/ingestion-jobs/" + result.job().id()),
+				response);
+	}
+
 	/** 查询 Workspace 作用域内的单个入库任务最新状态。 */
 	@GetMapping("/ingestion-jobs/{jobId}")
 	public ResponseEntity<ApiResponse<JobResponse>> getJob(
 			@PathVariable UUID workspaceId,
 			@PathVariable UUID jobId) {
 		return ApiResponses.ok(JobResponse.from(jobService.require(workspaceId, jobId)));
+	}
+
+	/** 主动取消未完成的入库任务，并返回已持久化的终态快照。 */
+	@PostMapping("/ingestion-jobs/{jobId}/cancel")
+	public ResponseEntity<ApiResponse<JobResponse>> cancelJob(
+			@PathVariable UUID workspaceId,
+			@PathVariable UUID jobId) {
+		return ApiResponses.ok(JobResponse.from(jobService.cancel(workspaceId, jobId)));
 	}
 
 	public record UploadResponse(

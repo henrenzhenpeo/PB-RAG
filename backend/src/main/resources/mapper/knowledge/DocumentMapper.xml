@@ -25,6 +25,16 @@
 		<result property="jobUpdatedAt" column="job_updated_at"/>
 	</resultMap>
 
+	<select id="lockByScope" resultType="dev.pbrag.knowledge.domain.Document">
+		SELECT id, workspace_id, knowledge_base_id, display_name, media_type,
+		       current_version_id, created_at, updated_at
+		FROM documents
+		WHERE workspace_id = #{workspaceId}
+		  AND knowledge_base_id = #{knowledgeBaseId}
+		  AND id = #{documentId}
+		FOR UPDATE
+	</select>
+
 	<select id="selectAllByKnowledgeBase" resultMap="documentListItemMap">
 		SELECT d.id AS document_id,
 		       d.workspace_id,
@@ -51,9 +61,17 @@
 		JOIN document_versions v
 		  ON v.workspace_id = d.workspace_id
 		 AND v.id = d.current_version_id
-		LEFT JOIN ingestion_jobs j
-		  ON j.workspace_id = v.workspace_id
-		 AND j.document_version_id = v.id
+		LEFT JOIN LATERAL (
+			SELECT job.*
+			FROM document_versions job_version
+			JOIN ingestion_jobs job
+			  ON job.workspace_id = job_version.workspace_id
+			 AND job.document_version_id = job_version.id
+			WHERE job_version.workspace_id = d.workspace_id
+			  AND job_version.document_id = d.id
+			ORDER BY job_version.version_number DESC
+			LIMIT 1
+		) j ON TRUE
 		WHERE d.workspace_id = #{workspaceId}
 		  AND d.knowledge_base_id = #{knowledgeBaseId}
 		ORDER BY d.created_at DESC, d.id DESC
@@ -64,5 +82,11 @@
 		SET current_version_id = #{versionId}, updated_at = CURRENT_TIMESTAMP
 		WHERE workspace_id = #{workspaceId}
 		  AND id = #{documentId}
+		  AND EXISTS (
+			SELECT 1 FROM document_versions v
+			WHERE v.workspace_id = documents.workspace_id
+			  AND v.document_id = documents.id
+			  AND v.id = #{versionId}
+		  )
 	</update>
 </mapper>

@@ -25,7 +25,7 @@ class DocumentUploadServiceTests {
 		org.mockito.Mockito.when(file.getContentType()).thenReturn("text/markdown");
 		org.mockito.Mockito.when(file.getInputStream()).thenReturn(input);
 		DocumentUploadService service = new DocumentUploadServiceImpl(
-				new RecordingStorage(), failingCreation(), 1024);
+				new RecordingStorage(), failingCreation(), signalService(), 1024);
 
 		assertThatThrownBy(() -> service.upload(UUID.randomUUID(), UUID.randomUUID(), file))
 				.isInstanceOf(IllegalStateException.class);
@@ -37,7 +37,7 @@ class DocumentUploadServiceTests {
 	void rejectsUnsupportedFileBeforeStorage() {
 		RecordingStorage storage = new RecordingStorage();
 		DocumentUploadService service = new DocumentUploadServiceImpl(
-				storage, failingCreation(), 1024);
+				storage, failingCreation(), signalService(), 1024);
 
 		assertThatThrownBy(() -> service.upload(
 				UUID.randomUUID(), UUID.randomUUID(),
@@ -51,7 +51,7 @@ class DocumentUploadServiceTests {
 	void deletesStoredObjectWhenDatabaseCreationFails() {
 		RecordingStorage storage = new RecordingStorage();
 		DocumentUploadService service = new DocumentUploadServiceImpl(
-				storage, failingCreation(), 1024);
+				storage, failingCreation(), signalService(), 1024);
 
 		assertThatThrownBy(() -> service.upload(
 				UUID.randomUUID(), UUID.randomUUID(),
@@ -66,6 +66,10 @@ class DocumentUploadServiceTests {
 		return (workspaceId, knowledgeBaseId, displayName, mediaType, contentSha256, storageKey) -> {
 			throw new IllegalStateException("database failure");
 		};
+	}
+
+	private static IngestionSignalService signalService() {
+		return org.mockito.Mockito.mock(IngestionSignalService.class);
 	}
 
 	private static final class RecordingStorage implements ObjectStorage {
