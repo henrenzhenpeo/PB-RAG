@@ -96,6 +96,10 @@ cd frontend && npm run lint
 cd frontend && npm run build-only
 ```
 
+后端测试包含基于 Testcontainers 的 PostgreSQL 18 / ParadeDB 0.26.6 集成测试；执行
+`mvn test` 前需要本机 Docker 可用。测试会在隔离数据库中执行完整 Flyway 迁移，
+验证并发任务领取、租约恢复、版本切换事务、Workspace 复合外键及 BM25 当前版本过滤。
+
 ## 项目边界
 
 当前 Workspace 是已登录用户共享的知识资源分组，不是租户或授权边界。多租户、成员关系和 RBAC 尚未实现；对外部署前必须补齐注册限制、限流和授权模型。

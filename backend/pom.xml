@@ -134,6 +134,17 @@
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- 使用带 pgvector 与 pg_search 的真实 ParadeDB 容器验证迁移、并发租约和资源作用域。 -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<!-- 架构规则进入测试：防止业务层绕过 MyBatis Mapper 或 Controller 直连持久层。 -->
 		<dependency>
 			<groupId>com.tngtech.archunit</groupId>
