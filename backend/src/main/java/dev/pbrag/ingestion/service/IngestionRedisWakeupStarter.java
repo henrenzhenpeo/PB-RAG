@@ -2,6 +2,7 @@ package dev.pbrag.ingestion.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
@@ -17,7 +18,8 @@ public class IngestionRedisWakeupStarter {
 	private final RedisMessageListenerContainer container;
 
 	/** 注入已关闭自动启动的监听容器。 */
-	public IngestionRedisWakeupStarter(RedisMessageListenerContainer container) {
+	public IngestionRedisWakeupStarter(
+			@Qualifier("ingestionWakeupListener") RedisMessageListenerContainer container) {
 		this.container = container;
 	}
 
