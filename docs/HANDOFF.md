@@ -10,6 +10,8 @@
 
 ## 已完成能力
 
+- `docs/RAG_DATABASE_WALKTHROUGH.md` 提供入库、检索、问答与数据库流转导览，含 Mermaid 流程图和覆盖上传、Job、分片、版本切换、BM25/RRF、检索留痕、引用的 SVG 插图，以及字段样例、源码链接和只读观察 SQL；示例数据仅用于教学。
+
 ### 工程与资源模型
 
 - Spring Boot 4.1.2 / Java 21 后端与 Vue 3 / TypeScript 前端骨架；
@@ -19,6 +21,7 @@
 - 邮箱注册、登录、退出和个人资料；所有已登录用户仍共享 Workspace；
 - `X-Request-Id`、Trace/Span、Workspace MDC、结构化访问日志和滚动文件日志；
 - ArchUnit 约束 Controller/Service/Mapper 与 JDBC 边界。
+- V10 为当前全部业务表和字段补充 PostgreSQL 中文注释，覆盖资源作用域、文档版本、Chunk 来源位置、入库状态与租约、检索阶段分数、问答消息和引用快照等易混淆语义；注释仅修改数据库元数据，不改变表结构或数据。
 
 ### 文档入库
 
@@ -28,9 +31,10 @@
 - 标题感知分块及字符偏移、Markdown 行号、标题路径和 PDF 页码；
 - 分块目标长度与最大长度仅由 `application.yml` 的 `pbrag.ingestion.chunking` 配置提供，代码不再维护重复默认值，缺失配置会在启动阶段显式失败；
 - PostgreSQL `FOR UPDATE SKIP LOCKED` 领取、租约、过期恢复、有限重试和结构化失败；
-- Worker 按稳定错误分类区分可重试与永久失败：Embedding 429、超时及临时连接错误有限重试，不支持格式、无可提取文本、非法输入和向量维度错误直接失败；失败状态条件更新会检查受影响行数，丢失租约时不误报已落库；
+- Worker 按稳定错误分类区分可重试与永久失败：Embedding 429、超时及临时连接错误有限重试，不支持格式、无可提取文本、非法输入和向量维度错误直接失败；失败状态条件更新会检查受影响行数，丢失租约时不误报已落库；最后一个远程 Embedding 批次返回后会在向量落库前再次续租，防止已被恢复的旧 Worker 覆盖新 Worker 结果；
 - 1024 维 Embedding 校验、批量写入和 HNSW cosine 索引；
 - 状态迁移在领域层和数据库条件更新两层约束。
+- 已新增基于 `paradedb/paradedb:0.26.6-pg18` 的 Testcontainers 集成测试，覆盖两个 Worker 并发领取同一任务时仅一个成功、过期租约恢复后再次领取，以及丢失租约时任务完成与当前版本切换整体回滚；测试代码已实现，待在 Docker 环境执行。
 - 已有文档支持 `POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` 上传同媒体类型的新版本；文档行锁保证版本号递增与并发一致性，重复内容复用已有版本，新版本入库成功后才与 Job 完成状态同事务切换为当前版本。
 - 入库任务支持 `POST /api/workspaces/{workspaceId}/ingestion-jobs/{jobId}/cancel`；PostgreSQL 条件更新保存 `CANCELLED/CLIENT_CANCELLED` 终态，Redis TTL 标记让 Worker 在阶段与 Embedding 批次边界快速停止；
 - 新任务创建后通过 Redis Pub/Sub 广播唤醒所有实例，实例收到信号后仍通过 PostgreSQL `SKIP LOCKED` 领取；Redis 故障时定时数据库轮询兜底，不改变任务事实来源；
@@ -45,6 +49,7 @@
 - `/retrieval/search` 与 `/retrieval/debug` 支持检索及阶段快照查看；
 - 前端知识库详情页提供检索调试入口，可查看阶段状态、候选数、延迟、错误码、排名、分数、来源位置与元数据；`RERANK_DISABLED` 和瞬时降级不会被 UI 隐藏；
 - 只检索当前文档版本，并返回 Chunk、版本、稳定来源位置和分数；
+- Testcontainers 集成测试同时覆盖 ParadeDB BM25 只返回指定 Workspace、知识库的当前版本 Chunk，以及复合外键拒绝跨 Workspace Chunk 关联；测试代码已实现，待执行。
 - BM25 使用可配置最低证据分数，当前基线为 `1.0`；最终 `CONTEXT` 同时执行 Top-K 与字符预算裁剪，因此阶段记录等于真实 Prompt 证据；
 - 百炼 Rerank 配置独立连接/读取超时，校验结果数量、下标、重复项和非有限分数，瞬时失败显式降级到 FUSION；
 - 确定性无证据拒答、版本化 Prompt、结构化 SSE 和受限引用原文摘录；
@@ -80,6 +85,9 @@
 - 全部 Mapper XML 已通过 XML 格式解析检查，`git diff --check` 通过；
 - 显式停止闭环、Prompt CRLF + BOM、检索阶段追溯、BM25 证据门槛、Context 裁剪和 Rerank 超时的现有回归测试均已在本次全量测试通过；V9 真实迁移与真实 Rerank 调用仍未执行。
 - 文档版本前端入口、检索调试页、入库主动取消与 Redis 唤醒/取消信号已实现；按协作规则尚未执行本轮后端编译、测试和前端类型检查，不能视为已验证完成。
+- 数据库中文注释迁移 V10 已编写，按协作规则尚未执行真实 Flyway 迁移；应用后需在数据库客户端刷新 Schema 元数据才能看到注释。
+- PostgreSQL/ParadeDB 自动化集成测试已编写，使用 PostgreSQL 18 与 `pg_search` 0.26.6 镜像执行 V1～V10；按协作规则本轮未运行，不能视为迁移、并发和恢复场景已经通过。
+- 远程 PostgreSQL 连接增加 JDBC TCP keepalive、5 秒建连超时和 Hikari 保活/连接寿命配置；RAG 在数据库断连导致中断状态无法落库时仍保留原始结构化错误，遗留 `STREAMING` 由会话恢复逻辑收敛。已补回归测试，按协作规则尚未执行。
 
 以上是最近一次有效验证快照。后续运行应以新结果覆盖本节，不追加历史流水。
 
@@ -88,9 +96,10 @@
 - `retrieval-v1` 的 40 条真值仍是草案；在人工复核和正式运行前，不能宣称 BM25、RRF 或 Rerank 带来质量提升；
 - BM25 最低分数 `1.0` 只是首版保守基线，必须通过可回答与拒答样本共同校准，避免过度召回或误拒答；
 - `qwen3.7-text-rerank` 尚未启用和实调，供应商地址、限流、延迟、成本和降级行为仍需记录；
-- 完整 Spring 上下文、Flyway、Mapper SQL、`SKIP LOCKED` 和租约恢复尚未由 Testcontainers 自动验证；
-- 新版本并发创建、永久错误首次失败、失败落库时租约丢失、取消与完成竞争，以及“任务完成与当前版本切换”的事务原子性尚缺真实 PostgreSQL/Redis 集成测试；
+- Testcontainers 已覆盖完整 Flyway、并发 `SKIP LOCKED` 领取、租约恢复、BM25 资源作用域和“任务完成与当前版本切换”事务原子性，但尚未实际执行；执行通过前仍属于待验证能力；
+- 新版本并发创建、永久错误首次失败、失败落库时租约丢失，以及取消与完成竞争仍缺真实 PostgreSQL/Redis 集成测试；
 - 停止、模型流中断、断连和页面刷新恢复需要在真实服务与真实文档上继续回测；
+- 2026-11-13 的一次故障中多个 PostgreSQL 连接在约 11 秒内先后关闭并最终同时 `Connection reset`；现有证据指向数据库重启、网络/NAT 或代理中断，而非业务 SQL。连接参数只能减少半开连接复用并加快恢复，仍需结合故障时刻的 PostgreSQL、系统和云防火墙日志确认外部触发源；
 - 所有已登录用户共享资源；开放注册只适合受控开发环境，公网部署前需要注册限制、登录限流、密码重置、会话清理和正式授权模型；
 - 当前模型别名可能自动升级，评测必须记录可获得的具体模型版本和运行配置。
 
@@ -100,5 +109,5 @@
 2. 在同一语料与配置上运行 Vector、BM25、RRF，记录 Recall@1/3/6、MRR、拒答率和延迟，并校准 BM25 最低证据分数；
 3. 配置并实调 `qwen3.7-text-rerank`，比较 RRF 与 Rerank Top 10 / Context Top 6；
 4. 用真实文档回测 SSE、无证据拒答、版本引用、显式停止、断流和刷新恢复；
-5. 补充 PostgreSQL 自动化集成测试，覆盖 V8/V9、阶段摘要、最终阶段、资源作用域、当前版本过滤、`SKIP LOCKED` 和租约恢复；
+5. 在 Docker 环境运行新增的 PostgreSQL/ParadeDB Testcontainers 测试，并继续补充检索阶段摘要/最终阶段、新版本并发创建、失败落库租约丢失和取消/完成竞争；
 6. 固化评测报告和失败样本后，进入 Agent Run/Step 状态机与最小 ReAct 循环。
