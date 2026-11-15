@@ -188,7 +188,11 @@ public class RagChatServiceImpl implements RagChatService {
 				turn, answer, finalized, "RAG_RETRIEVAL_FAILED", "知识检索暂时失败，请稍后重试");
 	}
 
-	/** 在弹性线程执行中断落库，完成后发送结构化错误事件。 */
+	/**
+	 * 在弹性线程执行中断落库，完成后发送结构化错误事件。
+	 * 数据库断连时中断记录也可能失败；此时保留原始错误分类并依赖会话加载时收敛遗留 STREAMING，
+	 * 避免二次持久化异常把检索或生成故障错误地覆盖成会话创建失败。
+	 */
 	private Flux<RagStreamEvent> persistInterruption(
 			StartedTurn turn, StringBuffer answer, AtomicBoolean finalized,
 			String errorCode, String message) {
@@ -198,8 +202,9 @@ public class RagChatServiceImpl implements RagChatService {
 					historyService.interrupt(turn, answer.toString(), errorCode);
 				}
 				catch (RuntimeException exception) {
-					finalized.set(false);
-					throw exception;
+					log.warn("rag_interruption_persistence_failed sessionId={} messageId={} errorCode={} errorType={}",
+							turn.sessionId(), turn.assistantMessageId(), errorCode,
+							exception.getClass().getSimpleName());
 				}
 			}
 		}).subscribeOn(Schedulers.boundedElastic())

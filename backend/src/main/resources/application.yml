@@ -22,6 +22,15 @@ spring:
     url: ${PBRAG_DB_URL:jdbc:postgresql://116.62.53.31:5432/pbrag}
     username: ${PBRAG_DB_USERNAME:pbrag}
     password: ${PBRAG_DB_PASSWORD}
+    hikari:
+      # 远程开发库可能经过防火墙或 NAT；保活先淘汰半开连接，短连接超时避免请求长时间卡死。
+      connection-timeout: ${PBRAG_DB_CONNECTION_TIMEOUT_MS:5000}
+      validation-timeout: ${PBRAG_DB_VALIDATION_TIMEOUT_MS:3000}
+      keepalive-time: ${PBRAG_DB_KEEPALIVE_TIME_MS:60000}
+      max-lifetime: ${PBRAG_DB_MAX_LIFETIME_MS:240000}
+      data-source-properties:
+        tcpKeepAlive: true
+        connectTimeout: 5
   data:
     redis:
       host: ${PBRAG_REDIS_HOST:116.62.53.31}

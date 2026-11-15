@@ -2,6 +2,7 @@ package dev.pbrag.chat.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -129,6 +130,33 @@ class RagChatServiceTests {
 			assertThat(event.errorCode()).isEqualTo("RAG_RETRIEVAL_FAILED");
 			assertThat(event.text()).contains("知识检索暂时失败");
 		});
+		verifyNoInteractions(chatModel);
+	}
+
+	@Test
+	void preservesRetrievalErrorWhenInterruptionCannotBePersisted() throws Exception {
+		UUID workspaceId = UUID.randomUUID();
+		UUID knowledgeBaseId = UUID.randomUUID();
+		UUID userId = UUID.randomUUID();
+		RetrievalService retrievalService = mock(RetrievalService.class);
+		ChatHistoryService historyService = mock(ChatHistoryService.class);
+		StreamingChatModel chatModel = mock(StreamingChatModel.class);
+		StartedTurn turn = new StartedTurn(workspaceId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+		when(historyService.startTurn(userId, workspaceId, knowledgeBaseId, null, "question")).thenReturn(turn);
+		when(retrievalService.search(workspaceId, knowledgeBaseId, "question"))
+				.thenThrow(new IllegalStateException("database disconnected"));
+		doThrow(new IllegalStateException("database still unavailable"))
+				.when(historyService).interrupt(turn, "", "RAG_RETRIEVAL_FAILED");
+		ByteArrayResource prompt = new ByteArrayResource(
+				"---\nid: test\n---\nOnly use evidence.".getBytes(StandardCharsets.UTF_8));
+		RagChatService service = new RagChatServiceImpl(
+				retrievalService, historyService, new RagCancellationRegistry(), chatModel, prompt);
+
+		List<RagStreamEvent> events = service.answer(userId, workspaceId, knowledgeBaseId, null, "question")
+				.collectList().block();
+
+		assertThat(events).extracting(RagStreamEvent::type).containsExactly("started", "status", "error");
+		assertThat(events.get(2).errorCode()).isEqualTo("RAG_RETRIEVAL_FAILED");
 		verifyNoInteractions(chatModel);
 	}
 
