@@ -130,6 +130,11 @@ public class IngestionWorker {
 			state = advance(job.id(), state, IngestionJobAction.START_EMBEDDING);
 
 			List<float[]> embeddings = embedInBatches(job.id(), state, chunks);
+			ensureNotCancelled(job.id());
+			// 最后一次远程调用可能超过租约；落库前再次确认所有权，防止恢复后的旧 Worker 覆盖新 Worker 结果。
+			if (jobMapper.renewLease(job.id(), workerId, state.stage(), leaseSeconds) != 1) {
+				throw new IllegalStateException("Job lease was lost before embedding persistence");
+			}
 			chunkPersistence.writeEmbeddings(job.workspaceId(), version.id(), chunks, embeddings, embeddingDimensions);
 			state = advance(job.id(), state, IngestionJobAction.START_INDEXING);
 
