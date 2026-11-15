@@ -10,7 +10,7 @@
 
 ## 已完成能力
 
-- `docs/RAG_DATABASE_WALKTHROUGH.md` 提供入库、检索、问答与数据库流转导览，含 Mermaid 流程图和覆盖上传、Job、分片、版本切换、BM25/RRF、检索留痕、引用的 SVG 插图，以及字段样例、源码链接和只读观察 SQL；示例数据仅用于教学。
+- `docs/RAG_DATABASE_WALKTHROUGH.md` 提供入库、检索、问答与数据库流转导览，新增带流动阶段、重试与降级分支的“上传到 Embedding / Vector 到 Rerank”双链路动画总览，并保留 Mermaid、分主题 SVG、字段样例、源码链接和只读观察 SQL；示例数据仅用于教学。
 
 ### 工程与资源模型
 

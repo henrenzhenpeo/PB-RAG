@@ -20,6 +20,29 @@ flowchart LR
 
 图中黄色“对象存储”如果在数据库客户端里找不到，是正常的：当前实现把原文件放在后端机器的本地文件系统。`pgvector` 和 `BM25` 也不是业务表，而是 `chunks` 表上的索引。真正的业务表定义见 [V2](../backend/src/main/resources/db/migration/V2__create_workspace_knowledge_and_ingestion.sql)、[V6](../backend/src/main/resources/db/migration/V6__create_chat_history.sql)、[V7](../backend/src/main/resources/db/migration/V7__create_production_retrieval.sql) 与 [V9](../backend/src/main/resources/db/migration/V9__record_retrieval_stage_outcomes.sql)。字段级中文释义见 [V10](../backend/src/main/resources/db/migration/V10__document_database_schema.sql)。
 
+## 动态总览：入库与检索如何接成一条证据链
+
+![PB-RAG 文档入库与 Production RAG 双链路动态总览](images/rag-dual-pipeline-animated.svg)
+
+上半条链路把“不稳定的上传文件”变成“可复现、可定位、可检索的版本化 Chunk”；下半条链路把“用户问题”变成“真正进入回答 Prompt 的 CONTEXT 证据”。图中的流动圆点表示数据向前传递，红色虚线表示正常主路径之外的重试或降级。若阅读器禁用 SVG 动画，所有节点和连线仍可作为静态总览阅读。
+
+两条链路通过 `chunks` 接起来，但职责不同：入库阶段负责生产 `content + source_position + embedding`，检索阶段只在确定的 Workspace、知识库和当前文档版本范围内读取这些数据。Vector 与 BM25 是并行召回，RRF 是确定性的排名融合，Rerank 是可选的远程精排，CONTEXT 才是实际交给 Chat 模型并转换成引用的最终证据。
+
+### 关键编排代码地图
+
+| 链路节点 | 当前代码入口 | 需要守住的工程边界 |
+| --- | --- | --- |
+| 上传与对象存储 | [`DocumentUploadServiceImpl.upload()`](../backend/src/main/java/dev/pbrag/ingestion/service/impl/DocumentUploadServiceImpl.java) | 文件系统与数据库不能共享事务，数据库失败时补偿删除对象 |
+| 资源、版本和 Job | [`IngestionCreationServiceImpl`](../backend/src/main/java/dev/pbrag/ingestion/service/impl/IngestionCreationServiceImpl.java) | 内容 Hash 幂等；已有文档的新版本在完成前不切换生产版本 |
+| 领取与阶段推进 | [`IngestionJobClaimService`](../backend/src/main/java/dev/pbrag/ingestion/service/IngestionJobClaimService.java)、[`IngestionWorker`](../backend/src/main/java/dev/pbrag/ingestion/service/IngestionWorker.java) | `SKIP LOCKED`、租约所有者、预期阶段和取消信号共同约束执行权 |
+| 分块与向量写入 | [`MarkdownHeadingChunkingStrategy`](../backend/src/main/java/dev/pbrag/ingestion/chunking/MarkdownHeadingChunkingStrategy.java)、[`ChunkPersistenceService`](../backend/src/main/java/dev/pbrag/ingestion/service/ChunkPersistenceService.java) | 分块可复现；数量、维度或写入失败时整批回滚 |
+| 完成与版本发布 | [`IngestionCompletionService.complete()`](../backend/src/main/java/dev/pbrag/ingestion/service/IngestionCompletionService.java) | Job 完成和 `current_version_id` 切换处在同一事务 |
+| 双路召回 | [`ChunkRetrievalMapper.xml`](../backend/src/main/resources/mapper/retrieval/ChunkRetrievalMapper.xml) | Workspace、知识库和当前版本过滤必须发生在 SQL 内 |
+| RRF、Rerank、CONTEXT | [`RetrievalServiceImpl`](../backend/src/main/java/dev/pbrag/retrieval/service/impl/RetrievalServiceImpl.java) | 异构原始分数不直接相加；远程瞬时故障显式降级；最终证据受 Top-K 和字符预算约束 |
+| 回答与引用 | [`RagChatServiceImpl`](../backend/src/main/java/dev/pbrag/chat/service/impl/RagChatServiceImpl.java) | 无证据时确定性拒答；引用绑定 Chunk、文档版本和稳定来源位置 |
+
+> 当前实现事实：已有文档的新版本由 `IngestionCompletionService` 在完成事务中切换；新建逻辑文档的首个版本仍在创建 Job 时提前写入 `current_version_id`。另外，`RetrievalServiceImpl.context()` 当前会保留第一条候选，即使它单独超过字符预算。这两处属于已识别但尚未在当前工作树完成的边界修正，阅读动画时不要把目标语义误认为所有路径都已验证满足。
+
 下面假设用户在 `ws-A` 的 `kb-A` 上传 `worker.md`，然后提问“Worker 崩溃后任务如何恢复？”。
 
 ## 1. 上传：保存原文件和建立资源身份
