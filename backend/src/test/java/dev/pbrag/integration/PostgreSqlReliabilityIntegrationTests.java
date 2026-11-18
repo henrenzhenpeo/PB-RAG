@@ -8,6 +8,8 @@ import dev.pbrag.ingestion.domain.IngestionJobStatus;
 import dev.pbrag.ingestion.domain.IngestionStage;
 import dev.pbrag.ingestion.mapper.IngestionJobMapper;
 import dev.pbrag.ingestion.service.IngestionCompletionService;
+import dev.pbrag.ingestion.service.IngestionCreationResult;
+import dev.pbrag.ingestion.service.IngestionCreationService;
 import dev.pbrag.ingestion.service.IngestionJobClaimService;
 import dev.pbrag.retrieval.domain.RetrievalHit;
 import dev.pbrag.retrieval.mapper.ChunkRetrievalMapper;
@@ -20,22 +22,17 @@ import java.util.concurrent.Future;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 /**
- * 在真实 PostgreSQL 18、pgvector 和 ParadeDB pg_search 上验证入库可靠性及资源作用域。
- * 测试使用隔离容器执行完整 Flyway 迁移，避免 H2 或 Mock 掩盖锁、租约和扩展 SQL 差异。
+ * 在 application.yml 指向的真实 PostgreSQL、pgvector 和 ParadeDB pg_search 上验证入库可靠性及资源作用域。
+ * 这些用例会清空数据库全部业务数据，必须通过显式环境变量启用，避免普通测试运行误删数据。
  */
-@Testcontainers
+@EnabledIfEnvironmentVariable(named = "PBRAG_ALLOW_EXTERNAL_DB_TESTS", matches = "(?i)true")
 @SpringBootTest(properties = {
 		"spring.profiles.active=test",
 		"spring.ai.model.chat=none",
@@ -45,27 +42,11 @@ import org.testcontainers.utility.DockerImageName;
 })
 class PostgreSqlReliabilityIntegrationTests {
 
-	private static final DockerImageName PARADE_DB_IMAGE = DockerImageName
-			.parse("paradedb/paradedb:0.26.6-pg18")
-			.asCompatibleSubstituteFor("postgres");
-
-	@Container
-	private static final PostgreSQLContainer postgres = new PostgreSQLContainer(PARADE_DB_IMAGE)
-			.withDatabaseName("pbrag_test")
-			.withUsername("pbrag")
-			.withPassword("pbrag");
-
-	@DynamicPropertySource
-	static void databaseProperties(DynamicPropertyRegistry registry) {
-		registry.add("spring.datasource.url", postgres::getJdbcUrl);
-		registry.add("spring.datasource.username", postgres::getUsername);
-		registry.add("spring.datasource.password", postgres::getPassword);
-	}
-
 	@Autowired private JdbcTemplate jdbc;
 	@Autowired private IngestionJobMapper jobMapper;
 	@Autowired private IngestionJobClaimService claimService;
 	@Autowired private IngestionCompletionService completionService;
+	@Autowired private IngestionCreationService creationService;
 	@Autowired private ChunkRetrievalMapper retrievalMapper;
 
 	@BeforeEach
@@ -147,6 +128,97 @@ class PostgreSqlReliabilityIntegrationTests {
 	}
 
 	@Test
+	void concurrentVersionCreationAllocatesDistinctIncreasingNumbers() throws Exception {
+		Fixture fixture = fixture("version-race", true);
+		CyclicBarrier start = new CyclicBarrier(2);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<IngestionCreationResult> first = executor.submit(() -> createVersionAfter(
+					start, fixture, 'c', "version-race-v3"));
+			Future<IngestionCreationResult> second = executor.submit(() -> createVersionAfter(
+					start, fixture, 'd', "version-race-v4"));
+
+			List<UUID> createdVersionIds = List.of(
+					first.get().documentVersionId(), second.get().documentVersionId());
+
+			assertThat(createdVersionIds).doesNotHaveDuplicates();
+			assertThat(jdbc.queryForList(
+					"SELECT version_number FROM document_versions WHERE document_id = ? ORDER BY version_number",
+					Integer.class, fixture.documentId())).containsExactly(1, 2, 3, 4);
+			assertThat(currentVersion(fixture.documentId())).isEqualTo(fixture.previousVersionId());
+		}
+		finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void permanentFailureOnFirstAttemptEntersFailedTerminalState() {
+		Fixture fixture = fixture("permanent-failure", false);
+		UUID jobId = insertJob(fixture.workspaceId(), fixture.currentVersionId());
+		IngestionJob claimed = claimService.recoverAndClaim("worker-permanent", 300, 30);
+
+		assertThat(claimed).isNotNull();
+		assertThat(jobMapper.failOrRetry(jobId, "worker-permanent", "UNSUPPORTED_DOCUMENT_TYPE",
+				"Unsupported document type", IngestionStage.PARSING, false, 30)).isEqualTo(1);
+
+		IngestionJob failed = jobMapper.selectByWorkspaceIdAndId(fixture.workspaceId(), jobId);
+		assertThat(failed.status()).isEqualTo(IngestionJobStatus.FAILED);
+		assertThat(failed.stage()).isEqualTo(IngestionStage.PARSING);
+		assertThat(failed.attemptCount()).isEqualTo(1);
+		assertThat(failed.errorCode()).isEqualTo("UNSUPPORTED_DOCUMENT_TYPE");
+		assertThat(failed.getLeaseOwner()).isNull();
+	}
+
+	@Test
+	void failureUpdateWithLostLeaseDoesNotOverwriteCurrentWorkerState() {
+		Fixture fixture = fixture("failure-lost-lease", false);
+		UUID jobId = insertJob(fixture.workspaceId(), fixture.currentVersionId());
+		assertThat(claimService.recoverAndClaim("current-worker", 300, 30)).isNotNull();
+
+		assertThat(jobMapper.failOrRetry(jobId, "stale-worker", "EMBEDDING_TIMEOUT",
+				"Embedding timed out", IngestionStage.PARSING, true, 30)).isZero();
+
+		IngestionJob unchanged = jobMapper.selectByWorkspaceIdAndId(fixture.workspaceId(), jobId);
+		assertThat(unchanged.status()).isEqualTo(IngestionJobStatus.RUNNING);
+		assertThat(unchanged.stage()).isEqualTo(IngestionStage.PARSING);
+		assertThat(unchanged.getLeaseOwner()).isEqualTo("current-worker");
+		assertThat(unchanged.errorCode()).isNull();
+	}
+
+	@Test
+	void cancellationAndCompletionRaceHasExactlyOneTerminalWinner() throws Exception {
+		Fixture fixture = fixture("terminal-race", true);
+		UUID jobId = insertJob(fixture.workspaceId(), fixture.currentVersionId());
+		claimAndAdvanceToIndexing(jobId, "race-worker");
+		CyclicBarrier start = new CyclicBarrier(2);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<Boolean> completion = executor.submit(() -> completeAfter(start, jobId, fixture));
+			Future<Integer> cancellation = executor.submit(() -> {
+				start.await();
+				return jobMapper.cancel(fixture.workspaceId(), jobId);
+			});
+
+			boolean completionWon = completion.get();
+			int cancelledRows = cancellation.get();
+			IngestionJob terminal = jobMapper.selectByWorkspaceIdAndId(fixture.workspaceId(), jobId);
+
+			assertThat((completionWon ? 1 : 0) + cancelledRows).isEqualTo(1);
+			assertThat(terminal.status()).isIn(IngestionJobStatus.COMPLETED, IngestionJobStatus.CANCELLED);
+			if (terminal.status() == IngestionJobStatus.COMPLETED) {
+				assertThat(currentVersion(fixture.documentId())).isEqualTo(fixture.currentVersionId());
+			}
+			else {
+				assertThat(currentVersion(fixture.documentId())).isEqualTo(fixture.previousVersionId());
+			}
+		}
+		finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
 	void bm25ReturnsCurrentVersionInsideRequestedResourceScopeOnly() {
 		Fixture requested = fixture("requested", true);
 		Fixture otherWorkspace = fixture("other", false);
@@ -178,6 +250,25 @@ class PostgreSqlReliabilityIntegrationTests {
 	private IngestionJob claimAfter(CyclicBarrier start, String workerId) throws Exception {
 		start.await();
 		return claimService.recoverAndClaim(workerId, 300, 30);
+	}
+
+	private IngestionCreationResult createVersionAfter(
+			CyclicBarrier start, Fixture fixture, char hashCharacter, String storageKey) throws Exception {
+		start.await();
+		return creationService.createVersion(fixture.workspaceId(), fixture.knowledgeBaseId(),
+				fixture.documentId(), "text/markdown", String.valueOf(hashCharacter).repeat(64), storageKey);
+	}
+
+	private boolean completeAfter(CyclicBarrier start, UUID jobId, Fixture fixture) throws Exception {
+		start.await();
+		try {
+			completionService.complete(jobId, "race-worker", fixture.workspaceId(),
+					fixture.documentId(), fixture.currentVersionId());
+			return true;
+		}
+		catch (IllegalStateException expectedLostRace) {
+			return false;
+		}
 	}
 
 	private void claimAndAdvanceToIndexing(UUID jobId, String workerId) {
