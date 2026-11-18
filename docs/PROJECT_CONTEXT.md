@@ -21,6 +21,7 @@ WeKnora 是参考实现和对照组，不是代码模板。每个核心主题先
 - 文档入库支持阶段状态、幂等、有限重试、租约恢复和明确失败信息；
 - RAG 支持向量与关键词混合检索、RRF、可选 Rerank、可追溯引用和无证据拒答；
 - Agent Runtime 核心循环由本仓库实现，可回放、取消并进入明确终态；
+- ReAct 是 Agent Runtime 的结构化工具调用循环；MCP 作为受治理的远程工具协议，Skill 作为版本化业务能力包；
 - Tool 支持 Schema 校验、确定性策略、超时、取消、重试、审批、Trace 和审计；
 - Workspace 资源归属贯穿 HTTP、服务、数据库、检索、引用和 Trace；
 - RAG 与 Agent 的改动可在固定、版本化数据集上回归；
@@ -37,15 +38,22 @@ WeKnora 是参考实现和对照组，不是代码模板。每个核心主题先
 - PostgreSQL、pgvector、ParadeDB BM25 和 Redis；
 - 混合检索、RRF、Rerank、SSE 问答与版本化引用；
 - 自研 Agent Runtime 和 3～5 个只读工具；
+- 一个随仓库发布的版本化业务 Skill；
 - 一个高风险工具审批样例；
 - Trace、审计、固定评测集与故障实验；
 - 支持演示主路径的 Vue 前端。
+
+### 实验性扩展
+
+- 只读 MCP Server/Client 的最小实验属于 P2：本地工具稳定且 P0/P1 未受影响时实施；
+- LangGraph4j 只用于相同 Prompt、工具契约和数据集下的对照评测，不进入首期生产运行时依赖。
 
 ### 暂不完成
 
 - 多租户、用户成员关系与 Workspace RBAC；
 - 自动 Wiki、GraphRAG、多 Agent 协作和完整长期记忆；
 - 大量模型、向量库、解析器、渠道或数据源集成；
+- 在线 Skill 市场、未知来源 Skill 自动安装和任意代码执行；
 - Kubernetes、完整技能市场、多种远程沙箱和商业计费。
 
 ## 4. 稳定技术方向
@@ -66,6 +74,10 @@ WeKnora 是参考实现和对照组，不是代码模板。每个核心主题先
 ### Spring AI 与项目自研边界
 
 Spring AI 负责模型协议、Embedding、工具 Schema 和观测基础设施。Agent Runtime、Production RAG、入库 Job 状态、文档版本与引用、评测数据和运行记录由 PB-RAG 实现。
+
+Agent Runtime 的首期生产编排由 PB-RAG 领域代码实现，PostgreSQL 保存 Run、Step、Tool Execution 与 Approval 的业务事实。LangGraph4j 只作为同一 Prompt、工具契约和评测集下的对照实现；没有实验报告和替代 ADR 前，不进入生产运行时依赖或成为状态事实来源。具体边界见 ADR 0009。
+
+ReAct、MCP 与 Skill 分层如下：ReAct 负责模型与工具之间的动态决策循环；MCP 工具先转换为内部工具契约，再统一经过白名单、Schema、策略、超时、脱敏和审计；Skill 由版本化 Prompt、工具白名单、输入输出契约、运行限制和评测数据组成，不能扩大调用者权限。
 
 ### 当前模型基线
 
@@ -129,9 +141,9 @@ PENDING / 处理中 / RETRY_WAIT → FAILED 或 CANCELLED
 
 ### 检索与引用
 
-Production RAG 使用 pgvector 与 ParadeDB BM25 双路召回、固定 RRF 和可选 Rerank。向量、关键词、融合、重排与最终上下文阶段需要可追溯；即使阶段零结果、跳过或降级，也要保存阶段摘要和实际最终阶段。RRF 只组合排名，不直接相加异构原始分数；动态权重和证据门槛必须由固定评测集校准。
+Production RAG 使用 pgvector 与 ParadeDB BM25 双路召回、固定 RRF 和可选 Rerank。向量、关键词、融合、重排与最终上下文阶段需要可追溯；即使阶段零结果、跳过或降级，也要保存阶段摘要和实际最终阶段。RRF 只组合排名，不直接相加异构原始分数；向量、BM25 和 Rerank 均在各自分数量纲内执行可配置证据门槛，门槛必须由固定评测集校准。
 
-无足够证据时由确定性代码拒答。`CONTEXT` 阶段同时执行 Top-K 与 Prompt 字符预算，持久化结果必须等于真实模型输入。SSE 使用具名事件传递状态、引用、正文增量、完成或错误；前端不能从自然语言反向猜测引用。
+无足够证据时由确定性代码拒答。`CONTEXT` 阶段同时执行 Top-K 与 Prompt 字符预算，持久化结果必须等于真实模型输入。相关性门槛只能过滤低相关证据；对于“主题相关但未明确陈述能力、状态或数值”的问题，回答契约仍必须判断证据充分性并明确拒答，不能把主题相关等同于结论成立。SSE 使用具名事件传递状态、引用、正文增量、完成或错误；前端不能从自然语言反向猜测引用。
 
 ### 时间、日志与敏感数据
 

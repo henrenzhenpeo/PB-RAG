@@ -36,6 +36,7 @@
 - [0006：基础 RAG 采用领域检索与结构化 SSE](adr/0006-基础-rag-采用领域检索与结构化-sse.md)
 - [0007：Production RAG 采用混合检索与可追溯阶段结果](adr/0007-production-rag-采用混合检索与可追溯阶段结果.md)
 - [0008：关键词召回采用 ParadeDB BM25](adr/0008-关键词召回采用-paradedb-bm25.md)
+- [0009：Agent Runtime 采用领域编排并以 LangGraph4j 作为对照](adr/0009-agent-runtime-采用领域编排并以-langgraph4j-作为对照.md)
 
 编号 `0002` 是历史预留，不为填补编号而创建空 ADR。
 

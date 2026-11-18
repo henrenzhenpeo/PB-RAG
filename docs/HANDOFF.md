@@ -6,7 +6,9 @@
 
 第一周纵向 RAG 闭环和第二周 Production RAG 主链路已完成。系统已具备真实文档入库、百炼 Embedding、pgvector 与 ParadeDB BM25 双路召回、RRF、可选 Rerank、检索阶段记录、千问流式回答、版本化引用、会话持久化、刷新恢复和显式停止能力。
 
-当前重点是完成 `retrieval-v1` 真值复核和统一基线评测，并补齐 PostgreSQL 自动化集成验证。完成后进入第三周 Agent Runtime。
+当前重点是完成 `retrieval-v1` 全量统一基线和本轮证据门槛/回答契约回归。PostgreSQL 自动化集成验证已经通过；全量评测通过后进入第三周 Agent Runtime。
+
+Agent 阶段的稳定方案已由 ADR 0009 确定：生产主线由 PB-RAG 自行实现紧凑的 Run/Step 与 ReAct Runtime；ReAct 使用结构化 Tool Call，MCP 作为受治理的远程工具协议，Skill 作为随仓库发布的版本化业务能力包。LangGraph4j 不进入首期生产依赖，只在基线稳定后以相同 Prompt、工具契约和数据集进行对照评测。
 
 ## 已完成能力
 
@@ -35,7 +37,7 @@
 - Worker 按稳定错误分类区分可重试与永久失败：Embedding 429、超时及临时连接错误有限重试，不支持格式、无可提取文本、非法输入和向量维度错误直接失败；失败状态条件更新会检查受影响行数，丢失租约时不误报已落库；最后一个远程 Embedding 批次返回后会在向量落库前再次续租，防止已被恢复的旧 Worker 覆盖新 Worker 结果；
 - 1024 维 Embedding 校验、批量写入和 HNSW cosine 索引；
 - 状态迁移在领域层和数据库条件更新两层约束。
-- 已新增基于 `paradedb/paradedb:0.26.6-pg18` 的 Testcontainers 集成测试，覆盖两个 Worker 并发领取同一任务时仅一个成功、过期租约恢复后再次领取，以及丢失租约时任务完成与当前版本切换整体回滚；测试代码已实现，待在 Docker 环境执行。
+- 已新增直接连接 `application.yml` 数据源的 PostgreSQL/ParadeDB 集成测试，覆盖两个 Worker 并发领取同一任务时仅一个成功、过期租约恢复后再次领取、丢失租约时任务完成与当前版本切换整体回滚、同一文档并发创建版本号、首次永久失败、失败落库时租约丢失，以及取消与完成竞争；测试会清空全部业务数据，仅在 `PBRAG_ALLOW_EXTERNAL_DB_TESTS=true` 时执行。
 - 已有文档支持 `POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions` 上传同媒体类型的新版本；文档行锁保证版本号递增与并发一致性，重复内容复用已有版本，新版本入库成功后才与 Job 完成状态同事务切换为当前版本。
 - 入库任务支持 `POST /api/workspaces/{workspaceId}/ingestion-jobs/{jobId}/cancel`；PostgreSQL 条件更新保存 `CANCELLED/CLIENT_CANCELLED` 终态，Redis TTL 标记让 Worker 在阶段与 Embedding 批次边界快速停止；
 - 新任务创建后通过 Redis Pub/Sub 广播唤醒所有实例，实例收到信号后仍通过 PostgreSQL `SKIP LOCKED` 领取；Redis 故障时定时数据库轮询兜底，不改变任务事实来源；
@@ -50,8 +52,8 @@
 - `/retrieval/search` 与 `/retrieval/debug` 支持检索及阶段快照查看；
 - 前端知识库详情页提供检索调试入口，可查看阶段状态、候选数、延迟、错误码、排名、分数、来源位置与元数据；`RERANK_DISABLED` 和瞬时降级不会被 UI 隐藏；
 - 只检索当前文档版本，并返回 Chunk、版本、稳定来源位置和分数；
-- Testcontainers 集成测试同时覆盖 ParadeDB BM25 只返回指定 Workspace、知识库的当前版本 Chunk，以及复合外键拒绝跨 Workspace Chunk 关联；测试代码已实现，待执行。
-- BM25 使用可配置最低证据分数，当前基线为 `1.0`；最终 `CONTEXT` 同时执行 Top-K 与字符预算裁剪，因此阶段记录等于真实 Prompt 证据；
+- 外部数据库集成测试同时覆盖 ParadeDB BM25 只返回指定 Workspace、知识库的当前版本 Chunk，以及复合外键拒绝跨 Workspace Chunk 关联；相关测试已在真实开发库通过。
+- BM25 使用可配置最低证据分数 `1.0`；Rerank 新增首版最低证据分数 `0.4`，过滤前数量、门槛和过滤后数量进入阶段摘要；最终 `CONTEXT` 同时执行 Top-K 与字符预算裁剪，因此阶段记录等于真实 Prompt 证据；
 - 百炼 Rerank 配置独立连接/读取超时，校验结果数量、下标、重复项和非有限分数，瞬时失败显式降级到 FUSION；
 - 确定性无证据拒答、版本化 Prompt、结构化 SSE 和受限引用原文摘录；
 - 会话、消息和引用按当前用户持久化，刷新后可恢复；
@@ -64,12 +66,13 @@
 
 - `evaluation/corpus/retrieval-v1-manifest.json` 冻结 4 个当前文档版本、377 个已完成 Embedding 的 Chunk；
 - `evaluation/datasets/retrieval-v1.jsonl` 包含 40 条人工真值草案，其中 32 条可回答、8 条拒答；
-- 证据绑定文档版本、Chunk 和稳定来源位置；尚未完成人工复核和正式基线运行。
+- `retrieval-033` 的损坏 JSONL 已恢复为“系统是否支持通过短信发送知识文档审批结果？”；40 行现在均应保持一行一个合法 JSON 对象；
+- `evaluation/reports/retrieval-v1-manual-smoke-2026-11-18.md` 固化 8 条可回答、3 条不可回答的人工抽样，记录排名、低相关误召回和证据蕴含失败；证据绑定文档版本、Chunk 和稳定来源位置，尚未完成 40 条正式基线。
 
 ## 当前关键配置与决定
 
 - Chat/RAG：`qwen3.7-flash`；Embedding：`qwen3.7-text-embedding-flash`，1024 维；
-- Rerank：`qwen3.7-text-rerank`，默认关闭，需配置业务空间专属 URL 与 API Key 后实测；
+- Rerank：`qwen3.7-text-rerank`，默认关闭；配置业务空间专属 URL 与 API Key 后已有单样本真实调用成功，正式评测仍需显式启用；
 - PostgreSQL Job 表是任务事实来源，Redis 只负责唤醒、取消标记和限流；
 - Flyway 是唯一 DDL 管理方式，业务访问统一经过 MyBatis-Plus Mapper；
 - Workspace 是共享知识资源分组，不是授权边界；
@@ -78,16 +81,16 @@
 ## 验证状态
 
 - 2026-11-12 使用 Microsoft OpenJDK 21.0.13 执行后端 `mvn test`：共 52 个测试，51 个通过，1 个 Spring 上下文测试因未接入 Testcontainers 跳过；113 个主源码文件和 20 个测试源码文件均完成编译；
-- Production RAG 单元测试覆盖 RRF 去重、Rerank 排序、瞬时故障降级和向量维度失败终态；
+- Production RAG 单元测试覆盖 RRF 去重、Rerank 排序、Rerank 最低证据分数、瞬时故障降级和向量维度失败终态；新增门槛测试按协作规则尚未执行。
 - 入库单元测试覆盖永久/瞬时错误分类，以及已有文档递增版本创建且处理完成前不切换当前版本；
-- ParadeDB 开发库为 PostgreSQL 18.6、`pg_search` 0.26.6；V8 已应用，BM25 查询使用 `Custom Scan (ParadeDB Base Scan)`，错误 Workspace 返回 0；
-- 真实 PostgreSQL 已成功应用到 V8，并完成 Spring 上下文启动验证；
+- ParadeDB 开发库为 PostgreSQL 18.6、`pg_search` 0.26.6；Flyway V1～V10 已应用，BM25 查询使用 `Custom Scan (ParadeDB Base Scan)`，错误 Workspace 返回 0；
+- 真实 PostgreSQL 已完成 Spring 上下文启动和 Flyway V1～V10 校验；
 - 前端最近已通过 `type-check`、`lint` 和生产构建；
 - 全部 Mapper XML 已通过 XML 格式解析检查，`git diff --check` 通过；
-- 显式停止闭环、Prompt CRLF + BOM、检索阶段追溯、BM25 证据门槛、Context 裁剪和 Rerank 超时的现有回归测试均已在本次全量测试通过；V9 真实迁移与真实 Rerank 调用仍未执行。
+- 显式停止闭环、Prompt CRLF + BOM、检索阶段追溯、BM25 证据门槛、Context 裁剪和 Rerank 超时的现有回归测试均已在最近一次全量测试通过；2026-11-18 使用 `qwen3.7-text-rerank` 完成 `retrieval-001` 单样本真实调用，Rerank Top 10 成功、耗时 539 ms、期望 Chunk 重排后保持第 1，最终阶段为 RERANK 且无降级。
 - 文档版本前端入口、检索调试页、入库主动取消与 Redis 唤醒/取消信号已实现；按协作规则尚未执行本轮后端编译、测试和前端类型检查，不能视为已验证完成。
-- 数据库中文注释迁移 V10 已编写，按协作规则尚未执行真实 Flyway 迁移；应用后需在数据库客户端刷新 Schema 元数据才能看到注释。
-- PostgreSQL/ParadeDB 自动化集成测试已编写，使用 PostgreSQL 18 与 `pg_search` 0.26.6 镜像执行 V1～V10；按协作规则本轮未运行，不能视为迁移、并发和恢复场景已经通过。
+- 数据库中文注释迁移 V10 已在真实开发库应用；数据库客户端需要刷新 Schema 元数据才能看到注释。
+- 2026-11-18 使用 Microsoft OpenJDK 21.0.13 在 `application.yml` 指向的 PostgreSQL 18.6/ParadeDB 开发库执行 `PostgreSqlReliabilityIntegrationTests`：10 个测试全部通过，无失败、错误或跳过；Flyway 成功校验 10 个迁移，116 个主源码文件和 22 个测试源码文件完成编译。测试覆盖并发领取、租约恢复、完成事务原子性、并发版本号、永久失败、失败更新租约保护、取消/完成竞争、BM25 资源作用域和复合外键。
 - 远程 PostgreSQL 连接增加 JDBC TCP keepalive、5 秒建连超时和 Hikari 保活/连接寿命配置；RAG 在数据库断连导致中断状态无法落库时仍保留原始结构化错误，遗留 `STREAMING` 由会话恢复逻辑收敛。已补回归测试，按协作规则尚未执行。
 
 以上是最近一次有效验证快照。后续运行应以新结果覆盖本节，不追加历史流水。
@@ -96,19 +99,23 @@
 
 - `retrieval-v1` 的 40 条真值仍是草案；在人工复核和正式运行前，不能宣称 BM25、RRF 或 Rerank 带来质量提升；
 - BM25 最低分数 `1.0` 只是首版保守基线，必须通过可回答与拒答样本共同校准，避免过度召回或误拒答；
-- `qwen3.7-text-rerank` 尚未启用和实调，供应商地址、限流、延迟、成本和降级行为仍需记录；
-- Testcontainers 已覆盖完整 Flyway、并发 `SKIP LOCKED` 领取、租约恢复、BM25 资源作用域和“任务完成与当前版本切换”事务原子性，但尚未实际执行；执行通过前仍属于待验证能力；
-- 新版本并发创建、永久错误首次失败、失败落库时租约丢失，以及取消与完成竞争仍缺真实 PostgreSQL/Redis 集成测试；
+- Rerank 最低分数 `0.4` 来自 11 条人工抽样，只能过滤低相关误召回；短信能力这类“相关但不蕴含答案”的样本仍必须在最终回答层验证拒答；
+- `qwen3.7-text-rerank` 已完成 11 条人工抽样，但尚未运行 40 条正式基线；限流、P95 延迟、成本和真实故障降级仍需记录；
+- Redis 取消信号的传播速度和 Redis 故障时的 PostgreSQL 轮询兜底仍缺真实多实例集成验证；
 - 停止、模型流中断、断连和页面刷新恢复需要在真实服务与真实文档上继续回测；
 - 2026-11-13 的一次故障中多个 PostgreSQL 连接在约 11 秒内先后关闭并最终同时 `Connection reset`；现有证据指向数据库重启、网络/NAT 或代理中断，而非业务 SQL。连接参数只能减少半开连接复用并加快恢复，仍需结合故障时刻的 PostgreSQL、系统和云防火墙日志确认外部触发源；
 - 所有已登录用户共享资源；开放注册只适合受控开发环境，公网部署前需要注册限制、登录限流、密码重置、会话清理和正式授权模型；
 - 当前模型别名可能自动升级，评测必须记录可获得的具体模型版本和运行配置。
+- Agent Runtime、MCP 和 Skill 尚未实现；ADR 0009 只确定边界和实施顺序，不能描述为已有能力；
+- LangGraph4j 对照尚未建立，当前不能宣称自研编排在质量、可靠性或成本上优于框架方案；
 
 ## 下一步
 
-1. 人工复核 `retrieval-v1` 的 40 条问题、期望证据和拒答样本；
-2. 在同一语料与配置上运行 Vector、BM25、RRF，记录 Recall@1/3/6、MRR、拒答率和延迟，并校准 BM25 最低证据分数；
-3. 配置并实调 `qwen3.7-text-rerank`，比较 RRF 与 Rerank Top 10 / Context Top 6；
-4. 用真实文档回测 SSE、无证据拒答、版本引用、显式停止、断流和刷新恢复；
-5. 在 Docker 环境运行新增的 PostgreSQL/ParadeDB Testcontainers 测试，并继续补充检索阶段摘要/最终阶段、新版本并发创建、失败落库租约丢失和取消/完成竞争；
-6. 固化评测报告和失败样本后，进入 Agent Run/Step 状态机与最小 ReAct 循环。
+1. 人工复核 `retrieval-v1` 剩余问题、期望证据和拒答样本，并校验 40 行 JSONL；
+2. 使用 `minimum-rerank-score=0.4` 在同一语料与配置上运行全部 40 条，记录 Vector、BM25、RRF、Rerank 的 Recall@1/3/6、MRR、拒答率和阶段延迟；
+3. 对 retrieval-033、036、040 运行最终 RAG 回答，验证 Prompt 1.1.0 能区分低相关无证据与相关但不蕴含答案；
+4. 若可回答 Recall@6 未回退且拒答改善，固化正式基线报告并开始 Agent Run/Step 状态机；
+5. Agent Runtime 开始后并行补充 Redis 取消信号的多实例验证，不让该 P1 场景阻塞 Run/Step 领域骨架；
+6. 按 ADR 0009 实现 Agent Run/Step、结构化 ReAct 循环和显式 Tool Registry；
+7. 先实现 `search_knowledge`、`read_document`、`list_documents`、`compare_documents` 与 `calculator`，再建立 `technical-change-review` Skill v1；
+8. 本地工具稳定后实现只读 MCP Server 和一个受控 MCP Client 工具，最后以相同契约建立 LangGraph4j 对照实验。

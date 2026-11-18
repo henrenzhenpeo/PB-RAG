@@ -75,9 +75,10 @@
 ### 工作内容
 
 - Agent Run/Step 状态机；
-- 基于 `ChatModel` 与显式 Tool Registry 的 ReAct 核心循环；
+- 基于 `ChatModel` 结构化 Tool Call 与显式 Tool Registry 的自研 ReAct 核心循环；不保存自由文本隐藏思维过程；
 - Tool Registry 与 JSON Schema 校验；
 - `search_knowledge`、`read_document`、`list_documents`、`calculator` 和一个领域工具；
+- `technical-change-review` 内置 Skill v1：版本化 Prompt、工具白名单、输入输出契约、运行限制与评测数据绑定；
 - 最大迭代、重复调用检测、Deadline、单步超时、取消和有限重试；
 - SSE 执行事件、轨迹持久化和回放；
 - 运行页展示 Run/Step、工具参数和取消。
@@ -87,6 +88,7 @@
 - Agent 能完成跨文档比较任务；
 - 简单问题仍可走固定 RAG；
 - 每轮模型调用、工具调用和 Observation 可回放；
+- Skill 版本、Prompt、工具版本和模型配置可以从 Run 记录复现；
 - 用户取消会传递到模型和工具；
 - 循环和超时进入明确终态；
 - 错误有结构化分类。
@@ -100,7 +102,8 @@
 - 工具审计与敏感参数脱敏；
 - SSRF 防护和 Prompt Injection 基础测试；
 - Agent 服务重启处理策略；
-- 受限执行的最小沙箱实验，可先不做多后端。
+- 受限执行的最小沙箱实验，可先不做多后端；
+- 只读 MCP Server 发布知识工具；MCP Client 接入一个受控只读业务工具，并统一进入工具策略、超时与审计；
 
 ### 验收
 
@@ -109,6 +112,7 @@
 - 审批绑定具体参数，修改参数后重新审批；
 - 敏感值不进入普通日志和 Trace；
 - 恶意文档不能改变确定性工具策略；
+- MCP 工具不能绕过本地工具白名单、Workspace 作用域和审计；
 - 服务重启后任务能够恢复、补偿或明确失败。
 
 ## 第 5 周：评测、故障实验与优化
@@ -120,6 +124,7 @@
 - 统计工具选择、参数正确率、任务成功率、成本和延迟；
 - 完成分块、Hybrid、Rerank、工具描述或上下文预算实验；
 - 用同一数据集比较自研 RAG、Agent Runtime 与 Spring AI 默认 Advisor 和 Tool Loop；
+- 用同一 Prompt、工具契约和数据集增加 LangGraph4j ReAct 对照；LangGraph4j 仅存在于实验边界；
 - 评测页并列展示两次运行；
 - 完成优先级最高的故障注入。
 
@@ -143,6 +148,7 @@
 - 每项优化都有相同数据集上的前后对比；
 - 可以把失败分类到检索、推理、工具、权限或基础设施；
 - 输出任务成功率、引用准确率、P95 延迟和平均成本；
+- 输出 PB-RAG Runtime、Spring AI Tool Loop 与 LangGraph4j 的任务成功率、工具参数正确率、恢复语义、代码量和框架侵入对比；
 - 故障实验有复现、Trace、修复和回归测试。
 
 ## 第 6 周：作品化与复盘
@@ -183,7 +189,7 @@
 ```text
 P0：入库、Production RAG、Agent Runtime、评测、数据一致性、可靠性
 P1：审批、审计、Trace、故障实验
-P2：MCP、上下文压缩、简单沙箱
+P2：MCP Client/Server、LangGraph4j 对照、上下文压缩、简单沙箱
 P3：Wiki、GraphRAG、多 Agent、多渠道、完整长期记忆
 ```
 
