@@ -47,6 +47,7 @@ public class RetrievalServiceImpl implements RetrievalService {
 	private final int rrfConstant;
 	private final double minimumVectorSimilarity;
 	private final double minimumBm25Score;
+	private final double minimumRerankScore;
 	private final int maximumContextCharacters;
 
 	public RetrievalServiceImpl(KnowledgeBaseService knowledgeBaseService,
@@ -61,6 +62,7 @@ public class RetrievalServiceImpl implements RetrievalService {
 			@Value("${pbrag.retrieval.rrf-constant:60}") int rrfConstant,
 			@Value("${pbrag.retrieval.minimum-similarity:0.2}") double minimumVectorSimilarity,
 			@Value("${pbrag.retrieval.minimum-bm25-score:1.0}") double minimumBm25Score,
+			@Value("${pbrag.retrieval.minimum-rerank-score:0.4}") double minimumRerankScore,
 			@Value("${pbrag.rag.maximum-context-characters:12000}") int maximumContextCharacters) {
 		this.knowledgeBaseService = knowledgeBaseService;
 		this.mapper = mapper;
@@ -76,6 +78,7 @@ public class RetrievalServiceImpl implements RetrievalService {
 		this.rrfConstant = positive("rrf-constant", rrfConstant);
 		this.minimumVectorSimilarity = range("minimum-similarity", minimumVectorSimilarity, -1, 1);
 		this.minimumBm25Score = nonNegative("minimum-bm25-score", minimumBm25Score);
+		this.minimumRerankScore = range("minimum-rerank-score", minimumRerankScore, 0, 1);
 		if (maximumContextCharacters < 1000) {
 			throw new IllegalArgumentException("maximum-context-characters must be at least 1000");
 		}
@@ -127,10 +130,13 @@ public class RetrievalServiceImpl implements RetrievalService {
 			if (rerankClient.enabled() && !ordered.isEmpty()) {
 				stageStarted = System.nanoTime();
 				try {
-					ordered = rerank(query, ordered);
+					RerankOutcome outcome = rerank(query, ordered);
+					ordered = outcome.results();
 					save(runId, workspaceId, stages, summaries,
 							summary(RetrievalStage.RERANK, RetrievalStageStatus.COMPLETED, ordered.size(),
-									stageStarted, null, Map.of("model", rerankClient.model())), ordered);
+									stageStarted, null, Map.of("model", rerankClient.model(),
+											"minimumScore", minimumRerankScore,
+											"unfilteredCandidateCount", outcome.unfilteredCandidateCount())), ordered);
 					finalStage = "RERANK";
 				}
 				catch (RerankTransientException exception) {
@@ -217,16 +223,19 @@ public class RetrievalServiceImpl implements RetrievalService {
 		}
 	}
 
-	private List<RetrievalStageResult> rerank(String query, List<RetrievalStageResult> fusion) {
+	/** 只让达到已记录证据门槛的重排结果进入 Context，避免低相关 Top-K 被无条件消费。 */
+	private RerankOutcome rerank(String query, List<RetrievalStageResult> fusion) {
 		List<RetrievalHit> hits = fusion.stream().map(RetrievalStageResult::hit).toList();
 		List<RerankClient.RerankScore> scores = rerankClient.rerank(query, hits, rerankTopK);
+		List<RerankClient.RerankScore> accepted = scores.stream()
+				.filter(score -> score.score() >= minimumRerankScore).toList();
 		List<RetrievalStageResult> result = new ArrayList<>();
-		for (int i = 0; i < scores.size(); i++) {
-			RerankClient.RerankScore score = scores.get(i);
+		for (int i = 0; i < accepted.size(); i++) {
+			RerankClient.RerankScore score = accepted.get(i);
 			result.add(new RetrievalStageResult(RetrievalStage.RERANK, i + 1, score.score(), hits.get(score.index()),
 					Map.of("fusionRank", score.index() + 1, "model", rerankClient.model())));
 		}
-		return List.copyOf(result);
+		return new RerankOutcome(List.copyOf(result), scores.size());
 	}
 
 	private List<RetrievalStageResult> context(List<RetrievalStageResult> ordered) {
@@ -250,13 +259,18 @@ public class RetrievalServiceImpl implements RetrievalService {
 	}
 
 	private Map<String, Object> configuration() {
-		return Map.of("candidateTopK", candidateTopK, "fusionTopK", fusionTopK,
-				"rerankTopK", rerankTopK, "finalTopK", finalTopK, "rrfConstant", rrfConstant,
-				"minimumVectorSimilarity", minimumVectorSimilarity,
-				"minimumBm25Score", minimumBm25Score,
-				"maximumContextCharacters", maximumContextCharacters,
-				"keywordRetriever", "PARADEDB_BM25_CHINESE_LINDERA",
-				"rerankEnabled", rerankClient.enabled());
+		return Map.ofEntries(
+				Map.entry("candidateTopK", candidateTopK),
+				Map.entry("fusionTopK", fusionTopK),
+				Map.entry("rerankTopK", rerankTopK),
+				Map.entry("finalTopK", finalTopK),
+				Map.entry("rrfConstant", rrfConstant),
+				Map.entry("minimumVectorSimilarity", minimumVectorSimilarity),
+				Map.entry("minimumBm25Score", minimumBm25Score),
+				Map.entry("minimumRerankScore", minimumRerankScore),
+				Map.entry("maximumContextCharacters", maximumContextCharacters),
+				Map.entry("keywordRetriever", "PARADEDB_BM25_CHINESE_LINDERA"),
+				Map.entry("rerankEnabled", rerankClient.enabled()));
 	}
 
 	private static String normalizeQuestion(String question) {
@@ -310,4 +324,8 @@ public class RetrievalServiceImpl implements RetrievalService {
 					keywordRank == null ? Integer.MAX_VALUE : keywordRank);
 		}
 	}
+
+	private record RerankOutcome(
+			List<RetrievalStageResult> results,
+			int unfilteredCandidateCount) { }
 }

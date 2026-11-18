@@ -120,6 +120,8 @@ pbrag:
     minimum-similarity: 0.2
     # 首版保守过滤极弱的词项命中，后续必须用 retrieval-v1 校准。
     minimum-bm25-score: 1.0
+    # Rerank 后的最终证据门槛；0.4 来自 retrieval-v1 首轮人工抽样，正式基线后必须重新校准。
+    minimum-rerank-score: ${PBRAG_RETRIEVAL_MINIMUM_RERANK_SCORE:0.4}
     rerank:
       enabled: ${PBRAG_RERANK_ENABLED:false}
       # 百炼业务空间专属地址，例如 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank

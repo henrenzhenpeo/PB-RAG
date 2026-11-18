@@ -90,6 +90,32 @@ class RetrievalServiceTests {
 	}
 
 	@Test
+	void rejectsRerankCandidatesBelowTheConfiguredEvidenceThreshold() {
+		Fixture fixture = new Fixture();
+		RetrievalHit weak = hit(0.9);
+		when(fixture.embeddingModel.embed(anyString())).thenReturn(new float[] { 1f, 2f, 3f });
+		when(fixture.mapper.searchCurrentVersions(any(), any(), anyString(), anyDouble(), anyInt()))
+				.thenReturn(List.of(weak));
+		when(fixture.mapper.searchBm25CurrentVersions(any(), any(), anyString(), anyInt()))
+				.thenReturn(List.of());
+		when(fixture.rerankClient.enabled()).thenReturn(true);
+		when(fixture.rerankClient.model()).thenReturn("rerank-model");
+		when(fixture.rerankClient.rerank(anyString(), any(), anyInt()))
+				.thenReturn(List.of(new RerankClient.RerankScore(0, 0.39)));
+
+		var result = fixture.service().searchDetailed(fixture.workspaceId, fixture.knowledgeBaseId, "question");
+
+		assertThat(result.finalStage()).isEqualTo("RERANK");
+		assertThat(result.hits()).isEmpty();
+		assertThat(result.stageSummaries()).anySatisfy(summary -> {
+			assertThat(summary.stage()).isEqualTo(RetrievalStage.RERANK);
+			assertThat(summary.candidateCount()).isZero();
+			assertThat(summary.metadata()).containsEntry("minimumScore", 0.4)
+					.containsEntry("unfilteredCandidateCount", 1);
+		});
+	}
+
+	@Test
 	void degradesToFusionOrderWhenRerankHasTransientFailure() {
 		Fixture fixture = new Fixture();
 		RetrievalHit first = hit(0.9);
@@ -194,7 +220,7 @@ class RetrievalServiceTests {
 		private RetrievalService service() {
 			return new RetrievalServiceImpl(knowledgeBaseService, mapper, runService,
 					rerankClient, embeddingModel, "embedding-model", 3,
-					30, 30, 10, 6, 60, 0.2, 1.0, 1000);
+					30, 30, 10, 6, 60, 0.2, 1.0, 0.4, 1000);
 		}
 	}
 }
