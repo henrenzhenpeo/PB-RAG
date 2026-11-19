@@ -1,4 +1,6 @@
-# retrieval-v1 全量基线（待优化）
+# retrieval-v1 全量基线与 Fusion Top 30/60 对照
+
+> 状态：Top 60 已通过当前数据集的 Production RAG 质量准入；本报告同时保留 Top 30 失败基线，作为改动依据。
 
 ## 运行信息
 
@@ -45,9 +47,9 @@ Rerank 提升了 Recall@1 和 MRR，但没有改善 Recall@6；部分跨文档�
 - 观察到的 Rerank 最大耗时为 8,373 ms；
 - 首轮请求错误 1/40，重试成功。正式基线需要持久化每条延迟后计算 P50/P95，并记录错误分类。
 
-## 准入结论
+## Top 30 阶段结论（已被后续实验取代）
 
-暂不进入 Agent Runtime。下一步应针对 retrieval-031 比较以下最小改动：扩大 RRF/Rerank 候选池，或为 Vector/BM25 各保留最低候选配额。使用同一 40 条数据回归，要求 Context Recall@6 不低于当前 94.12%，retrieval-031 两份证据均进入 Top 6，8 条不可回答样本继续保持正确拒答，再固化正式基线。
+Top 30 当时未达到 Agent Runtime 准入条件，因此针对 retrieval-031 比较扩大候选池与双路最低配额。后续 Top 60 全量实验已完成该验证；本段只保留为问题背景，不代表当前项目状态。
 
 ## Fusion Top 60 单样本实验
 
@@ -81,3 +83,10 @@ Rerank 提升了 Recall@1 和 MRR，但没有改善 Recall@6；部分跨文档�
 与 Top 30 相比，Rerank/Context Recall@6 从 94.12% 提升到 100%，MRR 从 0.90 提升到 0.94；retrieval-031 两份证据稳定进入 Context 第 3/1。8 条不可回答样本保持原有检索结果，其中 5 条为空 Context、3 条保留相关证据并已由最终回答验证正确拒答。
 
 Top 60 的全量平均 Rerank 延迟没有高于 Top 30 的 616.6 ms，但两次运行的远程网络与供应商抖动不同，且 Top 30 缺少 P95，不能据此宣称扩大候选池降低延迟。可以确认的是本轮 Top 60 的 P95 为 1,226 ms、最大 3,439 ms，未出现错误；在当前正确性优先级下可接受。建议把 `fusion-top-k=60` 固化为首版基线，同时继续监控 Token/费用和真实 P95。
+
+## 最终结论
+
+- Top 60 满足当前质量准入：Context Recall@6 为 100%，retrieval-031 的跨文档证据完整进入 Context，8/8 不可回答样本保持正确拒答；
+- 选择 Top 60 解决的是 Fusion 提前截断，不表示 Rerank 门槛或模型本身发生改善；
+- 当前结果允许进入 Agent Runtime，但仍需先将运行配置固化，并用 Retrieval 单元测试和关键样本确认配置没有漂移；
+- 早期 11 条人工抽样发现的 `minimum-rerank-score=0.4` 与证据充分性问题均已由本次 40 条正式基线覆盖，不再维护独立抽样报告。

@@ -8,8 +8,8 @@ PB-RAG 是一个面向团队技术知识的紧凑型企业知识 Agent 项目。
 
 - 第一周纵向 RAG 闭环已完成：Markdown/PDF 入库、分块、Embedding、向量检索、SSE 回答与版本化引用；
 - 第二周 Production RAG 主链路已完成：ParadeDB BM25、pgvector、RRF、可选 Rerank、阶段快照与前端检索调试页；
-- 首版 `retrieval-v1` 评测集已有 40 条真值草案，下一步是人工复核并运行统一基线；
-- Agent Runtime、工具治理、审批和完整故障实验尚未开始。
+- `retrieval-v1` 已完成 40 条统一基线和 Fusion Top 30/60 对照；Top 60 的 Context Recall@6 为 100%，8 条不可回答问题保持正确拒答；
+- 当前准备固化 Top 60 配置并进入 Agent Run/Step；工具治理、审批、MCP、Skill 和 LangGraph4j 对照尚未实现。
 
 最新的完成项、风险和下一步以 [当前交接](docs/HANDOFF.md) 为准。
 
@@ -27,7 +27,7 @@ PB-RAG 是一个面向团队技术知识的紧凑型企业知识 Agent 项目。
 backend/       Spring Boot 主服务
 frontend/      Vue 单页应用
 docs/          项目上下文、路线、交接与 ADR
-evaluation/    版本化评测语料、数据集与后续报告
+evaluation/    版本化评测语料、数据集、评测索引与报告
 prompts/       版本化运行时 Prompt
 ```
 
@@ -96,9 +96,7 @@ cd frontend && npm run lint
 cd frontend && npm run build-only
 ```
 
-后端测试包含基于 Testcontainers 的 PostgreSQL 18 / ParadeDB 0.26.6 集成测试；执行
-`mvn test` 前需要本机 Docker 可用。测试会在隔离数据库中执行完整 Flyway 迁移，
-验证并发任务领取、租约恢复、版本切换事务、Workspace 复合外键及 BM25 当前版本过滤。
+数据库可靠性测试支持两种方式：优先在有 Docker 的环境使用 Testcontainers 隔离数据库；受控开发环境也可显式设置 `PBRAG_ALLOW_EXTERNAL_DB_TESTS=true`，直接连接 `application.yml` 数据源运行 `PostgreSqlReliabilityIntegrationTests`。后者会清空全部业务数据，只能使用可重建的专用开发库。两种方式均用于验证并发任务领取、租约恢复、版本切换事务、Workspace 复合外键及 BM25 当前版本过滤。
 
 ## 项目边界
 
