@@ -68,6 +68,7 @@ Agent 阶段的稳定方案已由 ADR 0009 确定：生产主线由 PB-RAG 自�
 - `evaluation/datasets/retrieval-v1.jsonl` 包含 40 条人工真值草案，其中 32 条可回答、8 条拒答；
 - `retrieval-033` 的损坏 JSONL 已恢复为“系统是否支持通过短信发送知识文档审批结果？”；40 行现在均应保持一行一个合法 JSON 对象；
 - `evaluation/reports/retrieval-v1-manual-smoke-2026-11-18.md` 固化 8 条可回答、3 条不可回答的人工抽样，记录排名、低相关误召回和证据蕴含失败；证据绑定文档版本、Chunk 和稳定来源位置，尚未完成 40 条正式基线。
+- `evaluation/reports/retrieval-v1-baseline-2026-11-19.md` 记录 40 条单并发全量运行：Context Evidence Recall@1/3/6 为 88.24%/88.24%/94.12%，MRR 0.90；8 条不可回答样本均得到正确拒答语义。retrieval-031 的两份跨文档期望证据被 RRF Top 30 挤出，最终只能回答 PRD 部分，因此该报告状态为“待优化”，尚未达到 Agent Runtime 准入。
 
 ## 当前关键配置与决定
 
@@ -102,6 +103,7 @@ Agent 阶段的稳定方案已由 ADR 0009 确定：生产主线由 PB-RAG 自�
 - Rerank 最低分数 `0.4` 来自 11 条人工抽样，只能过滤低相关误召回；短信能力这类“相关但不蕴含答案”的样本仍必须在最终回答层验证拒答；
 - `qwen3.7-text-rerank` 已完成 11 条人工抽样，但尚未运行 40 条正式基线；限流、P95 延迟、成本和真实故障降级仍需记录；
 - 2026-11-19 使用 `minimum-rerank-score=0.4` 回归 retrieval-036/040：Rerank 均由 10 个原始候选过滤为 0，Context 为空；retrieval-033 保留相关站内信证据后，Prompt 1.1.0 最终回答明确说明资料未记载短信支持并进入 `completed`，证据充分性拒答验证通过。组合引用被 Markdown 反引号包裹的展示瑕疵仍待后续 Prompt 微调；
+- 2026-11-19 全量运行中 retrieval-039 首次调用返回 HTTP 500，重试后成功；Rerank 平均阶段耗时约 616.6 ms，观察到最大 8,373 ms，尚缺持久化延迟分布和 P95；
 - Redis 取消信号的传播速度和 Redis 故障时的 PostgreSQL 轮询兜底仍缺真实多实例集成验证；
 - 停止、模型流中断、断连和页面刷新恢复需要在真实服务与真实文档上继续回测；
 - 2026-11-13 的一次故障中多个 PostgreSQL 连接在约 11 秒内先后关闭并最终同时 `Connection reset`；现有证据指向数据库重启、网络/NAT 或代理中断，而非业务 SQL。连接参数只能减少半开连接复用并加快恢复，仍需结合故障时刻的 PostgreSQL、系统和云防火墙日志确认外部触发源；
@@ -112,10 +114,10 @@ Agent 阶段的稳定方案已由 ADR 0009 确定：生产主线由 PB-RAG 自�
 
 ## 下一步
 
-1. 人工复核 `retrieval-v1` 剩余问题、期望证据和拒答样本，并校验 40 行 JSONL；
-2. 使用 `minimum-rerank-score=0.4` 在同一语料与配置上运行全部 40 条，记录 Vector、BM25、RRF、Rerank 的 Recall@1/3/6、MRR、拒答率和阶段延迟；
-3. 在完整 8 条不可回答样本上确认低相关过滤与证据充分性拒答语义一致；
-4. 若 32 条可回答 Recall@6 未回退且 8 条拒答改善，固化正式基线报告并开始 Agent Run/Step 状态机；
+1. 针对 retrieval-031 比较扩大 RRF/Rerank 候选池与双路最低候选配额，优先选择最小、可解释的改动；
+2. 使用相同 40 条数据回归，要求 retrieval-031 两份证据进入 Context Top 6，整体 Recall@6 不低于 94.12%，8 条不可回答样本继续正确拒答；
+3. 将逐条阶段指标、错误、延迟和配置写入版本化结果，补齐 P50/P95、Git commit、数据集/manifest SHA-256、模型版本与费用；
+4. 固化正式基线报告后开始 Agent Run/Step 状态机；
 5. Agent Runtime 开始后并行补充 Redis 取消信号的多实例验证，不让该 P1 场景阻塞 Run/Step 领域骨架；
 6. 按 ADR 0009 实现 Agent Run/Step、结构化 ReAct 循环和显式 Tool Registry；
 7. 先实现 `search_knowledge`、`read_document`、`list_documents`、`compare_documents` 与 `calculator`，再建立 `technical-change-review` Skill v1；
