@@ -101,7 +101,7 @@ Agent 阶段的稳定方案已由 ADR 0009 确定：生产主线由 PB-RAG 自�
 - BM25 最低分数 `1.0` 只是首版保守基线，必须通过可回答与拒答样本共同校准，避免过度召回或误拒答；
 - Rerank 最低分数 `0.4` 来自 11 条人工抽样，只能过滤低相关误召回；短信能力这类“相关但不蕴含答案”的样本仍必须在最终回答层验证拒答；
 - `qwen3.7-text-rerank` 已完成 11 条人工抽样，但尚未运行 40 条正式基线；限流、P95 延迟、成本和真实故障降级仍需记录；
-- 2026-11-19 使用 `minimum-rerank-score=0.4` 回归 retrieval-036/040：Rerank 均由 10 个原始候选过滤为 0，Context 为空；retrieval-033 仍保留 9 个 Rerank 候选和 6 个 Context，符合“相关但不蕴含答案”预期，最终 Prompt 拒答尚待验证；
+- 2026-11-19 使用 `minimum-rerank-score=0.4` 回归 retrieval-036/040：Rerank 均由 10 个原始候选过滤为 0，Context 为空；retrieval-033 保留相关站内信证据后，Prompt 1.1.0 最终回答明确说明资料未记载短信支持并进入 `completed`，证据充分性拒答验证通过。组合引用被 Markdown 反引号包裹的展示瑕疵仍待后续 Prompt 微调；
 - Redis 取消信号的传播速度和 Redis 故障时的 PostgreSQL 轮询兜底仍缺真实多实例集成验证；
 - 停止、模型流中断、断连和页面刷新恢复需要在真实服务与真实文档上继续回测；
 - 2026-11-13 的一次故障中多个 PostgreSQL 连接在约 11 秒内先后关闭并最终同时 `Connection reset`；现有证据指向数据库重启、网络/NAT 或代理中断，而非业务 SQL。连接参数只能减少半开连接复用并加快恢复，仍需结合故障时刻的 PostgreSQL、系统和云防火墙日志确认外部触发源；
@@ -114,8 +114,8 @@ Agent 阶段的稳定方案已由 ADR 0009 确定：生产主线由 PB-RAG 自�
 
 1. 人工复核 `retrieval-v1` 剩余问题、期望证据和拒答样本，并校验 40 行 JSONL；
 2. 使用 `minimum-rerank-score=0.4` 在同一语料与配置上运行全部 40 条，记录 Vector、BM25、RRF、Rerank 的 Recall@1/3/6、MRR、拒答率和阶段延迟；
-3. 对 retrieval-033、036、040 运行最终 RAG 回答，验证 Prompt 1.1.0 能区分低相关无证据与相关但不蕴含答案；
-4. 若可回答 Recall@6 未回退且拒答改善，固化正式基线报告并开始 Agent Run/Step 状态机；
+3. 在完整 8 条不可回答样本上确认低相关过滤与证据充分性拒答语义一致；
+4. 若 32 条可回答 Recall@6 未回退且 8 条拒答改善，固化正式基线报告并开始 Agent Run/Step 状态机；
 5. Agent Runtime 开始后并行补充 Redis 取消信号的多实例验证，不让该 P1 场景阻塞 Run/Step 领域骨架；
 6. 按 ADR 0009 实现 Agent Run/Step、结构化 ReAct 循环和显式 Tool Registry；
 7. 先实现 `search_knowledge`、`read_document`、`list_documents`、`compare_documents` 与 `calculator`，再建立 `technical-change-review` Skill v1；
