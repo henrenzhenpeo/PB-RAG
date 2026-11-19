@@ -47,3 +47,13 @@ Rerank 提升了 Recall@1 和 MRR，但没有改善 Recall@6；部分跨文档�
 ## 准入结论
 
 暂不进入 Agent Runtime。下一步应针对 retrieval-031 比较以下最小改动：扩大 RRF/Rerank 候选池，或为 Vector/BM25 各保留最低候选配额。使用同一 40 条数据回归，要求 Context Recall@6 不低于当前 94.12%，retrieval-031 两份证据均进入 Top 6，8 条不可回答样本继续保持正确拒答，再固化正式基线。
+
+## Fusion Top 60 单样本实验
+
+将 `fusion-top-k` 从 30 临时提高到 60 后，retrieval-031 的实际去重融合候选为 53 条：
+
+- 功能验证说明期望 Chunk：Vector 第 28、Fusion 第 50、Rerank/Context 第 3；
+- PRD 期望 Chunk：BM25 第 30、Fusion 第 53、Rerank/Context 第 1；
+- PRD 的另一条有效替代证据：Fusion 第 5、Rerank/Context 第 2。
+
+扩大候选池解决了跨文档完整召回问题，证明失败点确实是 RRF Top 30 的提前截断，而不是 Rerank 最低分数。该样本 Rerank 阶段耗时由此前约 363 ms 增至 2,383 ms，约为 6.6 倍，因此不能仅凭单样本把 60 固化为默认值。下一步需要用相同 40 条数据比较 Top 30 与 Top 60 的 Recall、拒答、平均值和 P95；如果延迟成本不可接受，应把显式跨文档任务路由到后续 Agent `compare_documents`，而不是继续扩大固定 RAG 候选池。

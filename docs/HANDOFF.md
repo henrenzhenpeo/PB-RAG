@@ -104,6 +104,7 @@ Agent 阶段的稳定方案已由 ADR 0009 确定：生产主线由 PB-RAG 自�
 - `qwen3.7-text-rerank` 已完成 11 条人工抽样，但尚未运行 40 条正式基线；限流、P95 延迟、成本和真实故障降级仍需记录；
 - 2026-11-19 使用 `minimum-rerank-score=0.4` 回归 retrieval-036/040：Rerank 均由 10 个原始候选过滤为 0，Context 为空；retrieval-033 保留相关站内信证据后，Prompt 1.1.0 最终回答明确说明资料未记载短信支持并进入 `completed`，证据充分性拒答验证通过。组合引用被 Markdown 反引号包裹的展示瑕疵仍待后续 Prompt 微调；
 - 2026-11-19 全量运行中 retrieval-039 首次调用返回 HTTP 500，重试后成功；Rerank 平均阶段耗时约 616.6 ms，观察到最大 8,373 ms，尚缺持久化延迟分布和 P95；
+- retrieval-031 的 `fusion-top-k=60` 单样本实验成功：两份期望证据由 Fusion 第 50/53 提升到 Rerank 与 Context 第 3/1，确认 Top 30 提前截断是根因；但该样本 Rerank 耗时由约 363 ms 增至 2,383 ms，必须完成 40 条延迟与拒答回归后才能固化配置；
 - Redis 取消信号的传播速度和 Redis 故障时的 PostgreSQL 轮询兜底仍缺真实多实例集成验证；
 - 停止、模型流中断、断连和页面刷新恢复需要在真实服务与真实文档上继续回测；
 - 2026-11-13 的一次故障中多个 PostgreSQL 连接在约 11 秒内先后关闭并最终同时 `Connection reset`；现有证据指向数据库重启、网络/NAT 或代理中断，而非业务 SQL。连接参数只能减少半开连接复用并加快恢复，仍需结合故障时刻的 PostgreSQL、系统和云防火墙日志确认外部触发源；
@@ -114,8 +115,8 @@ Agent 阶段的稳定方案已由 ADR 0009 确定：生产主线由 PB-RAG 自�
 
 ## 下一步
 
-1. 针对 retrieval-031 比较扩大 RRF/Rerank 候选池与双路最低候选配额，优先选择最小、可解释的改动；
-2. 使用相同 40 条数据回归，要求 retrieval-031 两份证据进入 Context Top 6，整体 Recall@6 不低于 94.12%，8 条不可回答样本继续正确拒答；
+1. 使用 `fusion-top-k=60` 对相同 40 条数据做 A/B 回归，比较 Top 30 与 Top 60 的 Recall、拒答、平均延迟与 P95；
+2. 要求 retrieval-031 两份证据进入 Context Top 6，整体 Recall@6 不低于 94.12%，8 条不可回答样本继续正确拒答；若延迟成本不可接受，将显式跨文档任务交给 Agent `compare_documents`；
 3. 将逐条阶段指标、错误、延迟和配置写入版本化结果，补齐 P50/P95、Git commit、数据集/manifest SHA-256、模型版本与费用；
 4. 固化正式基线报告后开始 Agent Run/Step 状态机；
 5. Agent Runtime 开始后并行补充 Redis 取消信号的多实例验证，不让该 P1 场景阻塞 Run/Step 领域骨架；
