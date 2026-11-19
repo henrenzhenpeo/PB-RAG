@@ -81,7 +81,7 @@ Agent 阶段的稳定方案已由 ADR 0009 确定：生产主线由 PB-RAG 自�
 ## 验证状态
 
 - 2026-11-12 使用 Microsoft OpenJDK 21.0.13 执行后端 `mvn test`：共 52 个测试，51 个通过，1 个 Spring 上下文测试因未接入 Testcontainers 跳过；113 个主源码文件和 20 个测试源码文件均完成编译；
-- Production RAG 单元测试覆盖 RRF 去重、Rerank 排序、Rerank 最低证据分数、瞬时故障降级和向量维度失败终态；新增门槛测试按协作规则尚未执行。
+- 2026-11-19 使用 Microsoft OpenJDK 21.0.13 在 IDE 运行完整 `RetrievalServiceTests`：8 个测试全部通过，覆盖 RRF 去重、Rerank 排序与最低证据分数、瞬时故障降级、协议错误、BM25 门槛、Context 字符预算和向量维度失败终态；日志中的 `rerank_degraded` 是故障用例预期输出。
 - 入库单元测试覆盖永久/瞬时错误分类，以及已有文档递增版本创建且处理完成前不切换当前版本；
 - ParadeDB 开发库为 PostgreSQL 18.6、`pg_search` 0.26.6；Flyway V1～V10 已应用，BM25 查询使用 `Custom Scan (ParadeDB Base Scan)`，错误 Workspace 返回 0；
 - 真实 PostgreSQL 已完成 Spring 上下文启动和 Flyway V1～V10 校验；
