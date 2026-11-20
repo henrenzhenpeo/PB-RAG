@@ -8,6 +8,8 @@
 
 第三周首个同步 Agent 切片已实现并完成一次本地真实模型调用：Run/Step/Tool Execution 事实表、状态迁移、显式 Tool Registry、`calculator` 与模型原生 Tool Call 循环。单元测试、取消、故障与恢复仍待验证。LangGraph4j 只在生产 Runtime 与工具契约稳定后做同条件对照。
 
+六周范围已按 ADR 0010 收敛为 RAG 与知识调研 Agent 双主线：Agent 同步推进，复用 Production RAG 的检索与引用，对跨文档问题执行有界多步查找、证据核对和报告生成。此处是计划调整，研究型 Agent 功能尚未实现或验证。
+
 ## 当前能力
 
 ### 工程、资源与入库
@@ -45,7 +47,8 @@
 ### 文档与评测资产
 
 - [RAG 数据库导览](RAG_DATABASE_WALKTHROUGH.md) 解释入库、检索、问答、表字段和故障分支；
-- [面试指南](PB_RAG_INTERVIEW_GUIDE.md) 以已实现事实和验证边界组织生产问题；
+- [面试指南](PB_RAG_INTERVIEW_GUIDE.md) 已结合外部 RAG 题库整理 14 组“怎么问、怎么答、可能追问”的连续练习，区分已实现、已实测和后续设计；
+- [基础概念速查](AI_RAG_AGENT_CONCEPTS.md) 独立解释 AI、RAG、Agent 的术语、易混淆边界和项目例子，与项目面试指南互相链接；
 - [评测索引](../evaluation/README.md) 说明语料、数据集、报告和复现边界；
 - `retrieval-v1` 固定 4 个文档版本、377 个 Chunk、32 条可回答问题和 8 条不可回答问题；
 - [正式基线与 Top 30/60 对照](../evaluation/reports/retrieval-v1-baseline-2026-11-19.md) 是当前唯一权威检索报告；早期 11 条人工抽样结论已并入该报告。
@@ -66,7 +69,7 @@
 - `application.yml` 的仓库默认 `fusion-top-k` 已固化为 60；部署环境仍应核对实际生效配置，配置提交后的小范围回归尚未执行；
 - Prompt、模型别名、门槛、数据集、manifest 和代码提交都会影响可复现性，评测必须一并记录；
 - Workspace 目前是共享知识分组而非授权边界；安全策略不能交给模型或 Prompt；
-- Agent 生产主线采用 PB-RAG 领域 Runtime；MCP 是受治理的远程工具协议，Skill 是版本化业务能力包，LangGraph4j 仅用于对照实验。
+- Agent 生产主线采用 PB-RAG 领域 Runtime；六周首期聚焦 `search_knowledge`、`read_document` 和现有 `calculator`，以知识库内带引用的调研报告对应 RAG 问答。Skill、写操作审批、MCP 和 LangGraph4j 对照转入 P2，架构边界仍见 ADR 0009、0010。
 
 ## 开放风险
 
@@ -83,8 +86,8 @@
 
 ## 下一步
 
-1. 项目发起人按 `docs/RULES.md` 执行 Agent 状态机与 calculator 单元测试、Flyway V11 隔离迁移检查，再补多个固定计算样本；修正由验证暴露的问题；
-2. 从同步切片扩展出轨迹查询、SSE、租约续期/重启恢复、工具瞬时故障有限重试和取消/完成竞争集成测试；
-3. 接入 `search_knowledge`，将文档版本、Chunk 和来源位置绑定到 Agent Observation 与引用，再完成跨文档比较；
-4. 回归 Top 60 的 retrieval-031、033～040 关键样本，确认默认配置没有漂移；随后建立 `technical-change-review` Skill v1 和 `agent-v1` 数据集；
-5. 本地工具稳定后开展审批、MCP 和 LangGraph4j 对照。
+1. 项目发起人按 `docs/RULES.md` 执行现有 Agent 单元测试与 Flyway V11 隔离迁移检查，修正暴露的问题；
+2. 接入复用 Production RAG 的 `search_knowledge` 和带稳定来源的 `read_document`；建立计划、证据核对和报告契约，先完成一个跨文档调研闭环；
+3. 扩展轨迹查询、SSE、租约续期/重启恢复，以及取消/完成竞争和工具超时验证；
+4. 回归 RAG 关键样本，并建立含冲突、缺失证据的 `agent-v1` 固定数据集，分别记录两条主线的质量与成本；
+5. 双主线验收后再评估 Skill、审批、MCP 和 LangGraph4j 对照。
