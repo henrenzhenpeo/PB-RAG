@@ -63,7 +63,7 @@
 ## 当前决定与配置边界
 
 - Chat/RAG：`qwen3.7-flash`；Embedding：`qwen3.7-text-embedding-flash`、1024 维；Rerank：`qwen3.7-text-rerank`；
-- Top 60 已通过评测并被选为首版 Fusion 基线，但仓库默认配置是否已固化必须以代码和环境变量为准；不能只凭本文件判断运行值；
+- `application.yml` 的仓库默认 `fusion-top-k` 已固化为 60；部署环境仍应核对实际生效配置，配置提交后的小范围回归尚未执行；
 - Prompt、模型别名、门槛、数据集、manifest 和代码提交都会影响可复现性，评测必须一并记录；
 - Workspace 目前是共享知识分组而非授权边界；安全策略不能交给模型或 Prompt；
 - Agent 生产主线采用 PB-RAG 领域 Runtime；MCP 是受治理的远程工具协议，Skill 是版本化业务能力包，LangGraph4j 仅用于对照实验。
@@ -86,5 +86,5 @@
 1. 项目发起人按 `docs/RULES.md` 执行 Agent 状态机与 calculator 单元测试、Flyway V11 隔离迁移检查，再补多个固定计算样本；修正由验证暴露的问题；
 2. 从同步切片扩展出轨迹查询、SSE、租约续期/重启恢复、工具瞬时故障有限重试和取消/完成竞争集成测试；
 3. 接入 `search_knowledge`，将文档版本、Chunk 和来源位置绑定到 Agent Observation 与引用，再完成跨文档比较；
-4. 固化并验证 Top 60 的仓库配置，回归 retrieval-031、033～040；随后建立 `technical-change-review` Skill v1 和 `agent-v1` 数据集；
+4. 回归 Top 60 的 retrieval-031、033～040 关键样本，确认默认配置没有漂移；随后建立 `technical-change-review` Skill v1 和 `agent-v1` 数据集；
 5. 本地工具稳定后开展审批、MCP 和 LangGraph4j 对照。

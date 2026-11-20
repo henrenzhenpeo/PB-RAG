@@ -113,7 +113,7 @@ pbrag:
   retrieval:
     embedding-dimensions: 1024
     candidate-top-k: 30
-    fusion-top-k: 30
+    fusion-top-k: 60
     rerank-top-k: 10
     top-k: 6
     rrf-constant: 60

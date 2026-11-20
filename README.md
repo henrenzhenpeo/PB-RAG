@@ -8,7 +8,7 @@ PB-RAG 是一个面向团队技术知识的紧凑型企业知识 Agent 项目。
 
 - 第一周纵向 RAG 闭环已完成：Markdown/PDF 入库、分块、Embedding、向量检索、SSE 回答与版本化引用；
 - 第二周 Production RAG 主链路已完成：ParadeDB BM25、pgvector、RRF、可选 Rerank、阶段快照与前端检索调试页；
-- `retrieval-v1` 已完成 40 条统一基线和 Fusion Top 30/60 对照；Top 60 的 Context Recall@6 为 100%，8 条不可回答问题保持正确拒答；
+- `retrieval-v1` 已完成 40 条统一基线和 Fusion Top 30/60 对照；Top 60 的 Context Recall@6 为 100%，8 条不可回答问题保持正确拒答，仓库默认 Fusion Top K 已设为 60；
 - 第三周 Agent Runtime 已开始：Run/Step/Tool Execution 表、状态机、显式工具注册表和 `calculator` 结构化 ReAct 同步切片已实现，待编译、测试和真实模型验证；知识工具、SSE、恢复调度、审批、Skill、MCP 和 LangGraph4j 对照仍待实现。
 
 最新的完成项、风险和下一步以 [当前交接](docs/HANDOFF.md) 为准。
