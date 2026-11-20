@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="dev.pbrag.agent.mapper.AgentRunMapper">
+	<resultMap id="runMap" type="dev.pbrag.agent.domain.AgentRun">
+		<id property="id" column="id"/>
+		<result property="goal" column="goal"/>
+		<result property="status" column="status"/>
+		<result property="workspaceId" column="workspace_id"/>
+		<result property="knowledgeBaseId" column="knowledge_base_id"/>
+		<result property="agentKey" column="agent_key"/>
+		<result property="agentVersion" column="agent_version"/>
+		<result property="promptId" column="prompt_id"/>
+		<result property="promptVersion" column="prompt_version"/>
+		<result property="modelProvider" column="model_provider"/>
+		<result property="modelName" column="model_name"/>
+		<result property="configuration" column="configuration"/>
+		<result property="nextStepSequence" column="next_step_sequence"/>
+		<result property="deadlineAt" column="deadline_at"/>
+		<result property="cancelRequestedAt" column="cancel_requested_at"/>
+		<result property="leaseOwner" column="lease_owner"/>
+		<result property="leaseExpiresAt" column="lease_expires_at"/>
+		<result property="errorCode" column="error_code"/>
+		<result property="errorMessage" column="error_message"/>
+		<result property="finalAnswer" column="final_answer"/>
+		<result property="createdAt" column="created_at"/>
+		<result property="startedAt" column="started_at"/>
+		<result property="completedAt" column="completed_at"/>
+		<result property="updatedAt" column="updated_at"/>
+	</resultMap>
+
+	<insert id="insertRun">
+		INSERT INTO agent_runs (id, workspace_id, knowledge_base_id, goal, agent_key, agent_version,
+			prompt_id, prompt_version, model_provider, model_name, configuration, deadline_at)
+		VALUES (#{id}, #{workspaceId}, #{knowledgeBaseId}, #{goal}, #{agentKey}, #{agentVersion},
+			#{promptId}, #{promptVersion}, #{modelProvider}, #{modelName}, CAST(#{configuration} AS jsonb), #{deadlineAt})
+	</insert>
+	<select id="selectRun" resultMap="runMap">
+		SELECT id, workspace_id, knowledge_base_id, goal, status, agent_key, agent_version,
+			prompt_id, prompt_version, model_provider, model_name, configuration::text AS configuration,
+			next_step_sequence, deadline_at, cancel_requested_at, lease_owner, lease_expires_at,
+			error_code, error_message, final_answer, created_at, started_at, completed_at, updated_at
+		FROM agent_runs WHERE workspace_id = #{workspaceId}
+		AND knowledge_base_id = #{knowledgeBaseId} AND id = #{runId}
+	</select>
+	<update id="claim">
+		UPDATE agent_runs SET status = 'RUNNING', lease_owner = #{owner},
+			lease_expires_at = #{leaseExpiresAt}, started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+			updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{runId}
+		AND cancel_requested_at IS NULL AND deadline_at > CURRENT_TIMESTAMP
+		AND (status = 'PENDING' OR (status = 'RUNNING' AND lease_expires_at &lt; CURRENT_TIMESTAMP))
+	</update>
+	<update id="renew">
+		UPDATE agent_runs SET lease_expires_at = #{leaseExpiresAt}, updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{runId} AND status = 'RUNNING'
+		AND lease_owner = #{owner} AND lease_expires_at > CURRENT_TIMESTAMP
+		AND cancel_requested_at IS NULL
+	</update>
+	<update id="requestCancellation">
+		UPDATE agent_runs SET cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
+			updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{runId}
+		AND status IN ('PENDING', 'RUNNING', 'WAITING_APPROVAL')
+	</update>
+	<update id="finish">
+		UPDATE agent_runs SET status = #{next}, final_answer = #{answer}, error_code = #{errorCode},
+			error_message = #{errorMessage}, completed_at = CURRENT_TIMESTAMP,
+			lease_owner = NULL, lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{runId} AND status = #{expected}
+		AND (#{owner} IS NULL OR (lease_owner = #{owner} AND lease_expires_at > CURRENT_TIMESTAMP))
+		AND (#{next} != 'COMPLETED' OR cancel_requested_at IS NULL)
+	</update>
+	<select id="nextStepSequence" resultType="java.lang.Integer" affectData="true" flushCache="true">
+		UPDATE agent_runs SET next_step_sequence = next_step_sequence + 1, updated_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{runId} AND status = 'RUNNING'
+		AND lease_owner = #{owner} AND lease_expires_at > CURRENT_TIMESTAMP
+		AND cancel_requested_at IS NULL RETURNING next_step_sequence - 1
+	</select>
+	<insert id="insertStep">
+		INSERT INTO agent_steps (id, workspace_id, run_id, sequence_number, type, status, input_summary)
+		VALUES (#{id}, #{workspaceId}, #{runId}, #{sequence}, #{type}, 'RUNNING', CAST(#{summary} AS jsonb))
+	</insert>
+	<update id="finishStep">
+		UPDATE agent_steps SET status = #{status}, output_summary = CAST(#{summary} AS jsonb),
+			error_code = #{errorCode}, completed_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{stepId} AND status = 'RUNNING'
+	</update>
+	<insert id="insertToolExecution">
+		INSERT INTO tool_executions (id, workspace_id, run_id, step_id, tool_call_id, tool_name,
+			tool_version, idempotency_key, status, arguments_hash, arguments_redacted)
+		VALUES (#{id}, #{workspaceId}, #{runId}, #{stepId}, #{toolCallId}, #{toolName},
+			#{toolVersion}, #{idempotencyKey}, 'RUNNING', #{argumentsHash}, CAST(#{argumentsRedacted} AS jsonb))
+	</insert>
+	<update id="finishToolExecution">
+		UPDATE tool_executions SET status = #{status}, observation_summary = CAST(#{observation} AS jsonb),
+			error_code = #{errorCode}, completed_at = CURRENT_TIMESTAMP
+		WHERE workspace_id = #{workspaceId} AND id = #{executionId} AND status = 'RUNNING'
+	</update>
+</mapper>
