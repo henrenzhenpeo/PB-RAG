@@ -77,6 +77,8 @@ Spring AI 负责模型协议、Embedding、工具 Schema 和观测基础设施�
 
 Agent Runtime 的首期生产编排由 PB-RAG 领域代码实现，PostgreSQL 保存 Run、Step、Tool Execution 与 Approval 的业务事实。LangGraph4j 只作为同一 Prompt、工具契约和评测集下的对照实现；没有实验报告和替代 ADR 前，不进入生产运行时依赖或成为状态事实来源。具体边界见 ADR 0009。
 
+Run 创建时冻结 Prompt 摘要、模型与工具版本及运行限制；Step 按执行尝试追加，工具调用独立记录幂等身份。取消先持久化意图，再由运行循环协作式收敛；每次状态推进受 Workspace、期望状态和租约约束。结构化 ReAct 使用模型原生 Tool Call，不请求或保存隐藏思维过程。
+
 ReAct、MCP 与 Skill 分层如下：ReAct 负责模型与工具之间的动态决策循环；MCP 工具先转换为内部工具契约，再统一经过白名单、Schema、策略、超时、脱敏和审计；Skill 由版本化 Prompt、工具白名单、输入输出契约、运行限制和评测数据组成，不能扩大调用者权限。
 
 ### 当前模型基线

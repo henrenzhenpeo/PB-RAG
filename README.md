@@ -9,7 +9,7 @@ PB-RAG 是一个面向团队技术知识的紧凑型企业知识 Agent 项目。
 - 第一周纵向 RAG 闭环已完成：Markdown/PDF 入库、分块、Embedding、向量检索、SSE 回答与版本化引用；
 - 第二周 Production RAG 主链路已完成：ParadeDB BM25、pgvector、RRF、可选 Rerank、阶段快照与前端检索调试页；
 - `retrieval-v1` 已完成 40 条统一基线和 Fusion Top 30/60 对照；Top 60 的 Context Recall@6 为 100%，8 条不可回答问题保持正确拒答；
-- 当前准备固化 Top 60 配置并进入 Agent Run/Step；工具治理、审批、MCP、Skill 和 LangGraph4j 对照尚未实现。
+- 第三周 Agent Runtime 已开始：Run/Step/Tool Execution 表、状态机、显式工具注册表和 `calculator` 结构化 ReAct 同步切片已实现，待编译、测试和真实模型验证；知识工具、SSE、恢复调度、审批、Skill、MCP 和 LangGraph4j 对照仍待实现。
 
 最新的完成项、风险和下一步以 [当前交接](docs/HANDOFF.md) 为准。
 
@@ -68,6 +68,8 @@ cd backend
 ```
 
 默认后端端口为 `8088`，健康检查地址为 `http://localhost:8088/actuator/health`。
+
+Agent 首个同步切片需要 `openai` profile。向 `POST /api/workspaces/{workspaceId}/knowledge-bases/{knowledgeBaseId}/agent-runs` 提交 `{"goal":"计算 12 除以 3"}`；响应包含 Run ID、终态和答案。可用 `GET .../agent-runs/{runId}` 查询，或 `POST .../agent-runs/{runId}/cancel` 请求协作式取消。当前仅开放 `calculator`，运行请求可能持续至 60 秒，尚无 SSE 或服务重启恢复调度；此接口待编译和端到端验证。
 
 真实百炼 Rerank 默认关闭。需要供应商业务空间 URL 与 API Key 时，通过环境变量显式启用：
 
