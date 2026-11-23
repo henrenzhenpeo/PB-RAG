@@ -13,6 +13,12 @@
 		<result property="updatedAt" column="updated_at"/>
 	</resultMap>
 
+	<select id="selectAllOrdered" resultMap="userAccountResultMap">
+		SELECT id, email, display_name, password_hash, created_at, updated_at
+		FROM app_users
+		ORDER BY created_at, id
+	</select>
+
 	<select id="selectByEmail" resultMap="userAccountResultMap">
 		SELECT id, email, display_name, password_hash, created_at, updated_at
 		FROM app_users
@@ -31,6 +37,15 @@
 	<update id="updateDisplayName">
 		UPDATE app_users
 		SET display_name = #{displayName},
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = #{id}
+	</update>
+
+	<update id="updateAccount">
+		UPDATE app_users
+		SET email = #{email},
+			display_name = #{displayName},
+			password_hash = COALESCE(#{passwordHash}, password_hash),
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = #{id}
 	</update>

@@ -15,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import javax.crypto.SecretKeyFactory;
@@ -102,6 +103,62 @@ public class UserAccountServiceImpl implements UserAccountService {
 	public void logout(String token) {
 		if (token != null && !token.isBlank()) {
 			userSessionMapper.deleteById(sha256(token));
+		}
+	}
+
+	/** 读取全部用户，按创建时间稳定排序，供管理页面展示。 */
+	@Override
+	@Transactional(readOnly = true)
+	public List<User> list() {
+		return userAccountMapper.selectAllOrdered().stream().map(UserAccountServiceImpl::toUser).toList();
+	}
+
+	/** 管理员新增用户：复用注册校验，但不签发登录会话。 */
+	@Override
+	@Transactional
+	public User create(String email, String displayName, String password) {
+		String normalizedEmail = normalizeEmail(email);
+		String normalizedName = normalizeDisplayName(displayName);
+		validatePassword(password);
+		UserAccount account = new UserAccount(
+				UUID.randomUUID(), normalizedEmail, normalizedName, hashPassword(password));
+		try {
+			userAccountMapper.insert(account);
+		}
+		catch (DuplicateKeyException exception) {
+			throw new ConflictException("邮箱已注册", exception);
+		}
+		return toUser(account);
+	}
+
+	/** 更新用户资料；密码为空时保留原有密码摘要，避免误清空凭据。 */
+	@Override
+	@Transactional
+	public User updateAccount(UUID id, String email, String displayName, String password) {
+		String normalizedEmail = normalizeEmail(email);
+		String normalizedName = normalizeDisplayName(displayName);
+		String passwordHash = null;
+		if (password != null && !password.isBlank()) {
+			validatePassword(password);
+			passwordHash = hashPassword(password);
+		}
+		try {
+			if (userAccountMapper.updateAccount(id, normalizedEmail, normalizedName, passwordHash) == 0) {
+				throw new ResourceNotFoundException("用户不存在");
+			}
+		}
+		catch (DuplicateKeyException exception) {
+			throw new ConflictException("邮箱已注册", exception);
+		}
+		return toUser(userAccountMapper.selectById(id));
+	}
+
+	/** 删除用户；user_sessions 通过外键级联清理。 */
+	@Override
+	@Transactional
+	public void delete(UUID id) {
+		if (userAccountMapper.deleteById(id) == 0) {
+			throw new ResourceNotFoundException("用户不存在");
 		}
 	}
 

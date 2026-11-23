@@ -67,6 +67,8 @@ async function signOut() { await logout(); void router.replace('/sign-in') }
         </div>
         <span class="nav-caption second">分析</span>
         <router-link :to="`/workspaces/${workspaceId}/evaluations`" class="nav-main"><span class="nav-icon">◫</span><span>评测</span></router-link>
+        <span class="nav-caption second">系统</span>
+        <router-link :to="`/workspaces/${workspaceId}/users`" class="nav-main"><span class="nav-icon">☺</span><span>用户管理</span></router-link>
       </nav>
       <div class="sidebar-bottom">
         <span class="bottom-label">当前工作区 · 所有账号共享</span>

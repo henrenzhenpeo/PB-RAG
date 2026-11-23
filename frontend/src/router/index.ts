@@ -60,6 +60,11 @@ const router = createRouter({
           name: 'evaluations',
           component: () => import('@/views/evaluation/EvaluationView.vue'),
         },
+        {
+          path: 'users',
+          name: 'users',
+          component: () => import('@/views/users/UserListView.vue'),
+        },
       ],
     },
   ],
