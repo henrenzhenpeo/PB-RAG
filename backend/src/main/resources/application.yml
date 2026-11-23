@@ -21,7 +21,7 @@ spring:
   datasource:
     url: ${PBRAG_DB_URL:jdbc:postgresql://116.62.53.31:5432/pbrag}
     username: ${PBRAG_DB_USERNAME:pbrag}
-    password: ${PBRAG_DB_PASSWORD}
+    password: ${PBRAG_DB_PASSWORD:pbrag123}
     hikari:
       # 远程开发库可能经过防火墙或 NAT；保活先淘汰半开连接，短连接超时避免请求长时间卡死。
       connection-timeout: ${PBRAG_DB_CONNECTION_TIMEOUT_MS:5000}
@@ -35,7 +35,7 @@ spring:
     redis:
       host: ${PBRAG_REDIS_HOST:116.62.53.31}
       port: ${PBRAG_REDIS_PORT:6379}
-      password: ${PBRAG_REDIS_PASSWORD:}
+      password: ${PBRAG_REDIS_PASSWORD:pbrag123}
   flyway:
     enabled: true
   servlet:
