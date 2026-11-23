@@ -4,11 +4,19 @@
 
 ## 当前阶段
 
+当前功能级进度和行动依赖见 [功能级甘特图与当前焦点](FEATURE_GANTT_AND_CURRENT_FOCUS.md)；与代码功能同步的每周考察题库和答题记录见 [学习考察与记录](LEARNING_ASSESSMENT.md)。已有 Q3、Q4 的初次评分，其他题目按记录逐步复查。
+
+Q1～Q8、下一阶段 N1～N4 及 Agent 知识地图的参考答案已集中到 [学习考察参考答案](LEARNING_QUESTION_ANSWERS.md)；未实现部分明确标为设计答案，后续代码变化时需要同步更新。
+
 第一周 RAG 纵向闭环和第二周 Production RAG 已完成，`retrieval-v1` 的 40 条正式基线与 Fusion Top 30/60 对照也已完成。Top 60 在相同数据集上将 Context Evidence Recall@6 从 94.12% 提升到 100%，8 条不可回答样本保持正确拒答，满足进入第三周 Agent Runtime 的质量准入条件。
 
 第三周首个同步 Agent 切片已实现并完成一次本地真实模型调用：Run/Step/Tool Execution 事实表、状态迁移、显式 Tool Registry、`calculator` 与模型原生 Tool Call 循环。单元测试、取消、故障与恢复仍待验证。LangGraph4j 只在生产 Runtime 与工具契约稳定后做同条件对照。
 
 六周范围已按 ADR 0010 收敛为 RAG 与知识调研 Agent 双主线：Agent 同步推进，复用 Production RAG 的检索与引用，对跨文档问题执行有界多步查找、证据核对和报告生成。此处是计划调整，研究型 Agent 功能尚未实现或验证。
+
+外部 Agent/Multi-Agent 知识地图已映射到路线图、功能级甘特图和学习题：六周内实践单 Agent 架构、规划/ReAct、状态持久化与前后端运行轨迹；多 Agent、LangGraph4j 和 Code Interpreter 作为后续实验或设计题。该映射仅调整学习与验收计划，未新增运行时能力，尚待后续代码与评测验证。
+
+QMS 质量异常排查和设计协同资料核查已定义为双主线的两组[业务场景与验收任务](BUSINESS_SCENARIOS_QMS_DESIGN.md)：先做 QMS 多文档调研，再复用同一 Runtime 做设计规范与项目资料快照核查。场景文档和路线图已更新；演示语料、数据集、知识工具与报告均尚未实现或实测，不能视为原企业项目新增交付。
 
 ## 当前能力
 
